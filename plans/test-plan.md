@@ -16,8 +16,10 @@
 - `Testfokus.pub` is available as the first representative fixture.
 - CLI validation confirms `Adobe InDesign 2026` is reachable and reports version `21.3.0.60`.
 - OLE inspection of `Testfokus.pub` succeeds and produces a machine-readable artifact under `artifacts/inspection/`.
+- The sample file converts to `IDML` through the local CLI pipeline.
+- The generated `IDML` has been reopened successfully in Adobe InDesign 2026.
+- The HTTP API flow has been exercised end-to-end with upload, polling, report, and result download.
 
 ## Current Gaps
-- No fixture files yet.
-- No Adobe validation path verified yet.
-- No implementation exists yet beyond governance files.
+- Public cloud deployment for the conversion runtime is unresolved.
+- Polygon fidelity and semantic table import are still partial.

@@ -10,27 +10,26 @@
 ### EPIC-02 Feasibility Spike
 - [x] Ingest first representative `.pub` fixture.
 - [x] Evaluate extraction options and choose parser strategy.
-- [ ] Define internal document model.
-- [ ] Generate a minimal IDML artifact from extracted structure.
-- [ ] Verify result opens in InDesign.
+- [x] Define internal document model.
+- [x] Generate a minimal IDML artifact from extracted structure.
+- [x] Verify result opens in InDesign.
 
 ### EPIC-03 Product Skeleton
-- [ ] Scaffold frontend for upload, status, result, and report flow.
-- [ ] Scaffold backend job endpoints.
-- [ ] Implement secure temporary file handling.
+- [x] Scaffold frontend for upload, status, result, and report flow.
+- [x] Scaffold backend job endpoints.
+- [x] Implement secure temporary file handling.
 
 ### EPIC-04 Conversion Quality
-- [ ] Text and typography mapping.
-- [ ] Geometry and page mapping.
-- [ ] Style normalization and deduplication.
-- [ ] Swatches and color handling.
-- [ ] Quality report generation.
+- [x] Text and typography mapping.
+- [x] Geometry and page mapping.
+- [x] Style normalization and deduplication.
+- [x] Swatches and color handling.
+- [x] Quality report generation.
 
 ## Immediate Next Tasks
-- [ ] Decode the `Contents` and `Quill/QuillSub/CONTENTS` streams from `Testfokus.pub`.
-- [ ] Map the discovered structures into a first internal document model draft.
-- [ ] Explore `EscherStm` and `EscherDelayStm` as the likely drawing/object layers.
-- [ ] Attempt a first minimal `IDML` package that can be opened by InDesign.
+- [ ] Replace InDesign-scripted export with a pure server-side IDML writer if public hosting becomes a hard requirement.
+- [ ] Improve polygon fidelity and preserve more original graphic semantics.
+- [ ] Reconstruct semantic tables as native InDesign tables.
 
 ### EPIC-05 Release
 - [ ] GitHub Pages frontend deployment.

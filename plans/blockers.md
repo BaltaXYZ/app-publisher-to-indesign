@@ -2,7 +2,11 @@
 
 ## Active External Blockers
 
-- None at the moment for the feasibility spike.
+### BLK-003 Public Conversion Hosting
+- Status: open
+- Owner: platform/runtime decision
+- Impact: Local release is complete, but public deployment of the conversion runtime is not.
+- Unblocks when: The conversion runtime moves to a worker-capable platform, or the conversion engine becomes fully cloud-compatible without LibreOffice + Adobe runtime dependencies.
 
 ## Resolved Blockers
 

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pub2InDesign</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">Publisher till InDesign</p>
+        <h1>Konvertera `.pub` till verifierad `IDML`</h1>
+        <p class="lede">
+          Ladda upp en Microsoft Publisher-fil. Appen analyserar den, kör konverteringen via LibreOffice och
+          exporterar en InDesign-kompatibel `IDML`, plus en rapport över vad som var exakt, approximativt
+          och ännu inte stöds fullt ut.
+        </p>
+      </section>
+
+      <section class="panel upload-panel">
+        <form id="upload-form">
+          <label class="dropzone" for="file-input" id="dropzone">
+            <input id="file-input" name="file" type="file" accept=".pub" required />
+            <span class="drop-title">Släpp en `.pub`-fil här</span>
+            <span class="drop-subtitle">eller klicka för att välja fil</span>
+          </label>
+          <div class="actions">
+            <button class="primary" type="submit">Starta konvertering</button>
+            <span id="selected-file" class="selected-file">Ingen fil vald</span>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel status-panel">
+        <div class="panel-header">
+          <h2>Status</h2>
+          <span id="job-id" class="muted"></span>
+        </div>
+        <ol class="timeline" id="timeline">
+          <li data-state="idle">Uppladdad</li>
+          <li data-state="idle">Analyseras</li>
+          <li data-state="idle">Konverteras</li>
+          <li data-state="idle">Verifierad</li>
+        </ol>
+        <p id="status-text" class="status-copy">Ingen konvertering startad ännu.</p>
+      </section>
+
+      <section class="panel result-panel" id="result-panel" hidden>
+        <div class="panel-header">
+          <h2>Resultat</h2>
+          <a id="download-link" class="primary-link" href="#" hidden>Ladda ner IDML</a>
+        </div>
+        <div class="report-grid">
+          <article>
+            <h3>Exakt</h3>
+            <ul id="exact-list"></ul>
+          </article>
+          <article>
+            <h3>Approximativt</h3>
+            <ul id="approx-list"></ul>
+          </article>
+          <article>
+            <h3>Ej fullt stödt</h3>
+            <ul id="unsupported-list"></ul>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/main.js"></script>
+  </body>
+  </html>
+

@@ -35,3 +35,20 @@ Prove the first viable `.pub -> internal model -> IDML` path with real fixture d
 - Inspection script now inventories the container and writes an artifact report.
 - The first stream map shows `Contents`, `Quill`, and `Escher` structures as likely core extraction targets.
 - `Adobe InDesign 2026` responds to CLI-driven AppleScript checks from the repo environment.
+- A full sample conversion now succeeds and generates `IDML`.
+- The generated `IDML` reopens in InDesign successfully.
+
+## Iteration 2: Local Product Shell
+### Goal
+Expose the working conversion engine through a usable web app with upload, polling, report, and download.
+
+### Done
+- Local HTTP server implemented.
+- Upload endpoint implemented.
+- Job polling endpoint implemented.
+- Result download endpoint implemented.
+- Static frontend implemented.
+- End-to-end API flow verified with `Testfokus.pub`.
+
+### Status
+- Complete.

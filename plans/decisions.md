@@ -24,3 +24,13 @@
 - Status: accepted
 - Decision: Start the spike by inspecting the Publisher file as an OLE Compound File Binary container and inventorying its streams before choosing a deeper extraction layer.
 - Why: `Testfokus.pub` is a classic CFB/OLE file, so stream-level inspection is the safest first proof step and reduces blind parser work.
+
+## DEC-006 Conversion Runtime Strategy
+- Status: accepted
+- Decision: Use LibreOffice Draw as the first structural bridge from `.pub` to `.odg`, then reconstruct and export the result through Adobe InDesign to `IDML`.
+- Why: This environment can reliably execute that chain end-to-end today, while a raw Publisher parser plus pure IDML writer would add major implementation risk before producing user value.
+
+## DEC-007 Deployment Reality
+- Status: accepted
+- Decision: Treat the current release as a verified local runtime release, while marking Vercel-based public deployment as unresolved.
+- Why: Vercel Functions are not a realistic primary runtime for a LibreOffice + Adobe/InDesign conversion engine.
