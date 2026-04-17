@@ -6,7 +6,7 @@ import { constants as fsConstants } from "node:fs";
 import express from "express";
 import multer from "multer";
 
-import { runConversionPipeline } from "./lib/conversion/pipeline.js";
+import { ConversionQualityError, runConversionPipeline } from "./lib/conversion/pipeline.js";
 
 type JobStatus = "uploaded" | "processing" | "completed" | "failed";
 
@@ -106,6 +106,9 @@ app.post("/api/jobs", upload.single("file"), async (req, res) => {
       job.status = "failed";
       job.updatedAt = new Date().toISOString();
       job.error = error instanceof Error ? error.message : String(error);
+      if (error instanceof ConversionQualityError) {
+        job.reportPath = error.artifacts.reportPath;
+      }
     }
   })();
 

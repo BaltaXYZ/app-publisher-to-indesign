@@ -10,11 +10,11 @@
     <main class="shell">
       <section class="hero">
         <p class="eyebrow">Publisher till InDesign</p>
-        <h1>Konvertera `.pub` till verifierad `IDML`</h1>
+        <h1>Konvertera `.pub` till visuellt verifierad `IDML`</h1>
         <p class="lede">
-          Ladda upp en Microsoft Publisher-fil. Appen analyserar den, kör konverteringen via LibreOffice och
-          exporterar en InDesign-kompatibel `IDML`, plus en rapport över vad som var exakt, approximativt
-          och ännu inte stöds fullt ut.
+          Ladda upp en Microsoft Publisher-fil. Appen bygger en `IDML`, verifierar resultatet i Adobe InDesign,
+          jämför sedan referens och export sida för sida och underkänner resultat som inte passerar den visuella
+          acceptance-gaten.
         </p>
       </section>
 
@@ -53,16 +53,16 @@
         </div>
         <div class="report-grid">
           <article>
-            <h3>Exakt</h3>
-            <ul id="exact-list"></ul>
+            <h3>Acceptans</h3>
+            <ul id="acceptance-list"></ul>
           </article>
           <article>
-            <h3>Approximativt</h3>
-            <ul id="approx-list"></ul>
+            <h3>Kvalitetskontroller</h3>
+            <ul id="quality-list"></ul>
           </article>
           <article>
-            <h3>Ej fullt stödt</h3>
-            <ul id="unsupported-list"></ul>
+            <h3>Siddiffar</h3>
+            <ul id="diff-list"></ul>
           </article>
         </div>
       </section>
@@ -71,4 +71,3 @@
     <script type="module" src="/main.js"></script>
   </body>
   </html>
-

@@ -5,13 +5,21 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-export async function convertPubToOdg(pubPath: string, outputDir: string): Promise<string> {
+async function convertPub(pubPath: string, outputDir: string, format: "odg" | "pdf", filter?: string): Promise<string> {
   await mkdir(outputDir, { recursive: true });
 
-  await execFileAsync("soffice", ["--headless", "--convert-to", "odg", "--outdir", outputDir, pubPath], {
+  const convertArg = filter ? `${format}:${filter}` : format;
+  await execFileAsync("soffice", ["--headless", "--convert-to", convertArg, "--outdir", outputDir, pubPath], {
     maxBuffer: 1024 * 1024 * 10
   });
 
-  return path.join(outputDir, `${path.basename(pubPath, path.extname(pubPath))}.odg`);
+  return path.join(outputDir, `${path.basename(pubPath, path.extname(pubPath))}.${format}`);
 }
 
+export async function convertPubToOdg(pubPath: string, outputDir: string): Promise<string> {
+  return convertPub(pubPath, outputDir, "odg");
+}
+
+export async function convertPubToPdf(pubPath: string, outputDir: string): Promise<string> {
+  return convertPub(pubPath, outputDir, "pdf", "draw_pdf_Export");
+}

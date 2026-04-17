@@ -1,56 +1,91 @@
-import { writeFile } from "node:fs/promises";
-import { mkdir } from "node:fs/promises";
+import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { createConversionReport } from "./report.js";
+import type { ConversionReport } from "./report.js";
 import { exportModelToIdml } from "../indesign/export-model-to-idml.js";
-import { validateIdmlOpens } from "../indesign/validate-idml.js";
-import { convertPubToOdg } from "../libreoffice/convert.js";
-import { extractOdgAssets } from "../odg/assets.js";
-import { parseOdgDocument, writeParsedOdgArtifact } from "../odg/parser.js";
+import { exportIdmlToPdfAndAudit } from "../indesign/quality.js";
+import { convertPubToPdf } from "../libreoffice/convert.js";
+import { parsePdfDocument } from "../pdf/parser.js";
 import { inspectPubOle, writeInspectionArtifact } from "../pub/ole-inspector.js";
+import { comparePdfVisuals, renderPdfPages } from "../verification/pdf-diff.js";
 
 export interface ConversionArtifacts {
   pubInspectionPath: string;
-  odgPath: string;
+  referencePdfPath: string;
   modelPath: string;
   idmlPath: string;
+  candidatePdfPath: string;
   reportPath: string;
+  report: ConversionReport;
 }
 
-export async function runConversionPipeline(pubPath: string, outputRoot: string): Promise<ConversionArtifacts> {
+export class ConversionQualityError extends Error {
+  readonly artifacts: ConversionArtifacts;
+
+  constructor(message: string, artifacts: ConversionArtifacts) {
+    super(message);
+    this.name = "ConversionQualityError";
+    this.artifacts = artifacts;
+  }
+}
+
+export async function runConversionPipeline(
+  pubPath: string,
+  outputRoot: string,
+  options?: { referencePdfPath?: string }
+): Promise<ConversionArtifacts> {
   await mkdir(outputRoot, { recursive: true });
 
   const inspection = await inspectPubOle(pubPath);
   const pubInspectionPath = await writeInspectionArtifact(inspection);
 
-  const odgDir = path.join(outputRoot, "libreoffice");
-  const odgPath = await convertPubToOdg(pubPath, odgDir);
-
-  const document = parseOdgDocument(odgPath);
-  const modelPath = await writeParsedOdgArtifact(document);
-
-  const assetsDir = path.join(outputRoot, "assets");
-  const assetMap = await extractOdgAssets(odgPath, document, assetsDir);
-
   const baseName = path.basename(pubPath, path.extname(pubPath));
-  const report = createConversionReport(pubPath, document);
+  const referenceDir = path.join(outputRoot, "reference");
+  const generatedReferencePdfPath = path.join(referenceDir, `${baseName}.pdf`);
+  const referencePdfPath = options?.referencePdfPath
+    ? (await mkdir(referenceDir, { recursive: true }), await copyFile(path.resolve(options.referencePdfPath), generatedReferencePdfPath), generatedReferencePdfPath)
+    : await convertPubToPdf(pubPath, referenceDir);
+  const assetsDir = path.join(outputRoot, "assets");
+  const { document, assetMap } = await parsePdfDocument(referencePdfPath, assetsDir);
+  const backgroundPages = await renderPdfPages(referencePdfPath, path.join(outputRoot, "backgrounds"));
+  const modelPath = path.join(outputRoot, "model", `${baseName}.model.json`);
+
+  await mkdir(path.dirname(modelPath), { recursive: true });
+  await writeFile(modelPath, JSON.stringify(document, null, 2), "utf8");
+
   const { idmlPath, reportPath } = await exportModelToIdml({
     document,
     assetMap,
+    backgroundPages,
     outputDir: path.join(outputRoot, "exports"),
-    baseName,
-    report
+    baseName
   });
-  await validateIdmlOpens(idmlPath);
-  report.validatedInInDesign = true;
+  const candidatePdfPath = path.join(outputRoot, "exports", `${baseName}.pdf`);
+  const audit = await exportIdmlToPdfAndAudit(idmlPath, candidatePdfPath);
+  const comparison = await comparePdfVisuals(referencePdfPath, candidatePdfPath, path.join(outputRoot, "comparison"));
+  const report = createConversionReport(pubPath, referencePdfPath, candidatePdfPath, document, comparison, audit);
   await writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
 
-  return {
+  const artifacts = {
     pubInspectionPath,
-    odgPath,
+    referencePdfPath,
     modelPath,
     idmlPath,
-    reportPath
-  };
+    candidatePdfPath,
+    reportPath,
+    report
+  } satisfies ConversionArtifacts;
+
+  if (!report.releaseApproved) {
+    const reasons = [
+      !report.pageCountMatches ? "sidantalet matchar inte referensen" : null,
+      !report.visualMatchPassed ? "visuell diff hittade skillnader" : null,
+      !report.nativeAuditPassed ? "native-audit misslyckades" : null
+    ].filter(Boolean);
+
+    throw new ConversionQualityError(`Conversion failed acceptance gate: ${reasons.join(", ")}.`, artifacts);
+  }
+
+  return artifacts;
 }

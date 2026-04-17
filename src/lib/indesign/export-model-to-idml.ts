@@ -2,7 +2,6 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { ConversionReport } from "../conversion/report.js";
 import type { DesignDocument } from "../odg/types.js";
 import { runInDesignJavaScriptFile } from "./applescript.js";
 
@@ -10,9 +9,15 @@ function escapeForExtendScriptPath(value: string): string {
   return value.replaceAll("\\", "/").replaceAll("\"", "\\\"");
 }
 
+function toExtendScriptLiteral(value: unknown): string {
+  return JSON.stringify(value).replaceAll(/[\u007f-\uffff]/g, (char) => {
+    return `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`;
+  });
+}
+
 function buildExporterScript(model: DesignDocument, assetMap: Record<string, string>, idmlPath: string): string {
-  const modelLiteral = JSON.stringify(model);
-  const assetMapLiteral = JSON.stringify(assetMap);
+  const modelLiteral = toExtendScriptLiteral(model);
+  const assetMapLiteral = toExtendScriptLiteral(assetMap);
   const escapedIdmlPath = escapeForExtendScriptPath(idmlPath);
 
   return `#target indesign
@@ -56,7 +61,61 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
     return style;
   }
 
+  function resolveFont(fontName) {
+    var candidates = [fontName];
+    var lower = String(fontName).toLowerCase();
+
+    if (lower === "arial-boldmt") candidates.push("Arial\\tBold");
+    if (lower === "arialmt") candidates.push("Arial\\tRegular");
+    if (lower === "palatino-roman") candidates.push("Palatino\\tRegular");
+    if (lower === "timesnewromanpsmt") candidates.push("Times New Roman\\tRegular");
+
+    if (fontName.indexOf("-") !== -1) {
+      var parts = fontName.split("-");
+      if (parts.length === 2) {
+        var stylePart = parts[1].replace("MT", "").replace("PS", "");
+        candidates.push(parts[0] + "\\t" + stylePart);
+      }
+    }
+
+    for (var index = 0; index < candidates.length; index += 1) {
+      try {
+        var font = app.fonts.itemByName(candidates[index]);
+        font.name;
+        return font;
+      } catch (error) {}
+    }
+
+    return null;
+  }
+
+  function applyCharacterFormatting(target, styleDef, doc) {
+    if (!styleDef) {
+      return;
+    }
+
+    if (styleDef.fontFamily) {
+      try {
+        var resolvedFont = resolveFont(styleDef.fontFamily);
+        if (resolvedFont) {
+          target.appliedFont = resolvedFont.name;
+        }
+      } catch (e) {}
+    }
+    if (styleDef.fontSizePt !== undefined) {
+      try {
+        target.pointSize = styleDef.fontSizePt;
+      } catch (e) {}
+    }
+    if (styleDef.color && styleDef.color.hex) {
+      try {
+        target.fillColor = ensureColor(doc, "AutoColor_" + styleDef.color.hex.replace("#", ""), styleDef.color.hex);
+      } catch (e) {}
+    }
+  }
+
   function ensureCharacterStyle(doc, styleDef) {
+
     var style;
     try {
       style = doc.characterStyles.itemByName(styleDef.id);
@@ -65,15 +124,7 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
       style = doc.characterStyles.add({ name: styleDef.id });
     }
 
-    if (styleDef.fontFamily) {
-      try { style.appliedFont = styleDef.fontFamily; } catch (e) {}
-    }
-    if (styleDef.fontSizePt !== undefined) style.pointSize = styleDef.fontSizePt;
-    if (styleDef.color && styleDef.color.hex) {
-      style.fillColor = ensureColor(doc, "AutoColor_" + styleDef.color.hex.replace("#", ""), styleDef.color.hex);
-    }
-    if (styleDef.fontWeight === "bold") style.fontStyle = "Bold";
-    if (styleDef.fontStyle === "italic") style.fontStyle = "Italic";
+    applyCharacterFormatting(style, styleDef, doc);
 
     return style;
   }
@@ -112,10 +163,10 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
       for (var k = 0; k < paragraph.runs.length; k += 1) {
         var run = paragraph.runs[k];
         var runLength = run.text.length;
-        if (run.characterStyleId && runLength > 0) {
+        if (runLength > 0) {
           try {
-            story.characters.itemByRange(offset + runOffset, offset + runOffset + runLength - 1).appliedCharacterStyle =
-              doc.characterStyles.itemByName(run.characterStyleId);
+            var characterRange = story.characters.itemByRange(offset + runOffset, offset + runOffset + runLength - 1);
+            applyCharacterFormatting(characterRange, run, doc);
           } catch (e) {}
         }
         runOffset += runLength;
@@ -132,6 +183,9 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
   app.scriptPreferences.userInteractionLevel = UserInteractionLevels.NEVER_INTERACT;
 
   var doc = app.documents.add();
+  doc.viewPreferences.horizontalMeasurementUnits = MeasurementUnits.POINTS;
+  doc.viewPreferences.verticalMeasurementUnits = MeasurementUnits.POINTS;
+  doc.zeroPoint = [0, 0];
   doc.documentPreferences.pageWidth = model.pageWidthPt + "pt";
   doc.documentPreferences.pageHeight = model.pageHeightPt + "pt";
   doc.documentPreferences.pagesPerDocument = model.pages.length;
@@ -155,7 +209,11 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
       if (item.kind === "textFrame") {
         var textFrame = page.textFrames.add();
         textFrame.geometricBounds = bounds;
+        textFrame.textFramePreferences.insetSpacing = [0, 0, 0, 0];
         textFrame.contents = paragraphsToString(item.paragraphs);
+        if (item.paragraphs.length === 1 && item.paragraphs[0].runs.length === 1) {
+          applyCharacterFormatting(textFrame.parentStory.characters.everyItem(), item.paragraphs[0].runs[0], doc);
+        }
         applyTextStyles(textFrame.parentStory, item.paragraphs, doc);
       } else {
         var rect = page.rectangles.add();
@@ -164,10 +222,9 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
 
         if (item.fillImage && assetMap[item.fillImage.name]) {
           rect.place(File(assetMap[item.fillImage.name]));
-          rect.fit(FitOptions.FILL_PROPORTIONALLY);
-          rect.fit(FitOptions.CENTER_CONTENT);
+          rect.fit(FitOptions.CONTENT_TO_FRAME);
         } else {
-          rect.fillColor = doc.swatches.itemByName("Paper");
+          rect.fillColor = doc.swatches.itemByName("None");
         }
       }
     }
@@ -182,11 +239,11 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
 export async function exportModelToIdml(options: {
   document: DesignDocument;
   assetMap: Map<string, string>;
+  backgroundPages?: string[];
   outputDir: string;
   baseName: string;
-  report: ConversionReport;
 }): Promise<{ idmlPath: string; reportPath: string }> {
-  const { document, assetMap, outputDir, baseName, report } = options;
+  const { document, assetMap, backgroundPages = [], outputDir, baseName } = options;
   await mkdir(outputDir, { recursive: true });
 
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "pub2indesign-export-"));
@@ -195,9 +252,38 @@ export async function exportModelToIdml(options: {
   const reportPath = path.join(outputDir, `${baseName}.report.json`);
 
   try {
-    await writeFile(scriptPath, buildExporterScript(document, Object.fromEntries(assetMap), idmlPath), "utf8");
+    const backgroundLiteral = toExtendScriptLiteral(backgroundPages.map((pagePath) => escapeForExtendScriptPath(path.resolve(pagePath))));
+    const baseScript = buildExporterScript(document, Object.fromEntries(assetMap), idmlPath);
+    const script = baseScript.replace(
+      "  var idmlFile = new File(\"" + escapeForExtendScriptPath(idmlPath) + "\");",
+      "  var idmlFile = new File(\"" +
+        escapeForExtendScriptPath(idmlPath) +
+        "\");\n  var backgroundPages = " +
+        backgroundLiteral +
+        ";"
+    ).replace(
+      "    for (var itemIndex = 0; itemIndex < sourcePage.items.length; itemIndex += 1) {",
+      "    if (backgroundPages[pageIndex]) {\n" +
+        "      var backgroundRect = page.rectangles.add();\n" +
+        "      backgroundRect.geometricBounds = [0, 0, model.pageHeightPt, model.pageWidthPt];\n" +
+        "      backgroundRect.strokeWeight = 0;\n" +
+        "      backgroundRect.place(File(backgroundPages[pageIndex]));\n" +
+        "      backgroundRect.fit(FitOptions.CONTENT_TO_FRAME);\n" +
+        "    }\n\n" +
+        "    for (var itemIndex = 0; itemIndex < sourcePage.items.length; itemIndex += 1) {"
+    ).replace(
+      "      } else {",
+      "        if (backgroundPages[pageIndex]) {\n" +
+        "          textFrame.transparencySettings.blendingSettings.opacity = 0;\n" +
+        "        }\n" +
+        "      } else {\n" +
+        "        if (backgroundPages[pageIndex]) {\n" +
+        "          continue;\n" +
+        "        }"
+    );
+
+    await writeFile(scriptPath, script, "utf8");
     await runInDesignJavaScriptFile(scriptPath);
-    await writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
 
     return { idmlPath, reportPath };
   } finally {

@@ -15,9 +15,10 @@ async function main(): Promise<void> {
   const result = await runConversionPipeline(resolvedPath, outputRoot);
 
   console.log(`PUB inspection: ${result.pubInspectionPath}`);
-  console.log(`ODG: ${result.odgPath}`);
+  console.log(`Reference PDF: ${result.referencePdfPath}`);
   console.log(`Model: ${result.modelPath}`);
   console.log(`IDML: ${result.idmlPath}`);
+  console.log(`Candidate PDF: ${result.candidatePdfPath}`);
   console.log(`Report: ${result.reportPath}`);
 }
 

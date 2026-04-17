@@ -7,9 +7,9 @@ const timeline = document.getElementById("timeline");
 const jobIdText = document.getElementById("job-id");
 const resultPanel = document.getElementById("result-panel");
 const downloadLink = document.getElementById("download-link");
-const exactList = document.getElementById("exact-list");
-const approxList = document.getElementById("approx-list");
-const unsupportedList = document.getElementById("unsupported-list");
+const acceptanceList = document.getElementById("acceptance-list");
+const qualityList = document.getElementById("quality-list");
+const diffList = document.getElementById("diff-list");
 
 let pollTimer = null;
 let activeJobId = null;
@@ -67,19 +67,51 @@ async function pollJob(jobId) {
     return false;
   } else if (job.status === "failed") {
     statusText.textContent = `Konverteringen misslyckades: ${job.error ?? "okänt fel"}`;
+    resultPanel.hidden = false;
+    renderReport(report);
     return true;
   } else if (job.status === "completed") {
-    statusText.textContent = "Konverteringen är klar och IDML-filen har verifierats i InDesign.";
+    statusText.textContent = "Konverteringen är klar och passerade både InDesign-audit och visuell jämförelse.";
     resultPanel.hidden = false;
     downloadLink.hidden = false;
     downloadLink.href = `/api/jobs/${job.id}/result`;
-    renderList(exactList, report?.exact);
-    renderList(approxList, report?.approximate);
-    renderList(unsupportedList, report?.unsupported);
+    renderReport(report);
     return true;
   }
 
   return false;
+}
+
+function renderReport(report) {
+  if (!report) {
+    renderList(acceptanceList, ["Ingen rapport tillgänglig ännu."]);
+    renderList(qualityList, []);
+    renderList(diffList, []);
+    return;
+  }
+
+  renderList(acceptanceList, [
+    `Visuell match: ${report.visualMatchPassed ? "godkänd" : "underkänd"}`,
+    `Native audit: ${report.nativeAuditPassed ? "godkänd" : "underkänd"}`,
+    `Release gate: ${report.releaseApproved ? "godkänd" : "underkänd"}`,
+    `Visuell difftröskel: ${report.visualDiffThreshold}`
+  ]);
+
+  renderList(qualityList, [
+    `Sidor: ${report.pageCount}`,
+    `Textframes: ${report.convertedTextFrames}`,
+    `Grafikobjekt: ${report.totalGraphics}`,
+    `Overset text: ${report.oversetText ? "ja" : "nej"}`,
+    `Saknade länkar: ${report.missingLinks.length}`,
+    `Fontproblem: ${report.fontIssues.length}`
+  ]);
+
+  const differingPages = (report.pageDiffs ?? [])
+    .filter((page) => page.differingPixels > 0)
+    .slice(0, 6)
+    .map((page) => `Sida ${page.pageNumber}: ${page.differingPixels} avvikande pixlar`);
+
+  renderList(diffList, differingPages.length > 0 ? differingPages : ["Inga visuellt relevanta sidavvikelser hittades."]);
 }
 
 function stopPolling() {
@@ -149,6 +181,7 @@ form.addEventListener("submit", async (event) => {
   setTimeline("uploaded");
   resultPanel.hidden = true;
   downloadLink.hidden = true;
+  renderReport(null);
 
   const response = await fetch("/api/jobs", {
     method: "POST",

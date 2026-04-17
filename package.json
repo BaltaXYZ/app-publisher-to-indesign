@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Feasibility spike and application code for Publisher to InDesign conversion.",
   "scripts": {
+    "acceptance:run": "tsx src/cli/run-acceptance.ts",
     "build:web": "mkdir -p dist && cp -R web/. dist/",
     "check:indesign": "tsx src/cli/check-indesign.ts",
     "convert:pub": "tsx src/cli/convert-pub.ts",
@@ -21,13 +22,16 @@
     "cfb": "^1.2.2",
     "express": "^5.1.0",
     "fast-xml-parser": "^5.3.0",
-    "multer": "^2.0.2"
+    "multer": "^2.0.2",
+    "pixelmatch": "^7.1.0",
+    "pngjs": "^7.0.0"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.7",
     "@types/express": "^5.0.3",
     "@types/multer": "^2.0.0",
     "@types/node": "^24.5.2",
+    "@types/pngjs": "^6.0.5",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"
   }

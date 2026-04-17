@@ -35,6 +35,9 @@ export interface DesignImageFill {
 export interface DesignTextRun {
   text: string;
   characterStyleId?: string;
+  fontFamily?: string;
+  fontSizePt?: number;
+  color?: DesignColor;
 }
 
 export interface DesignParagraph {
@@ -85,4 +88,3 @@ export interface DesignDocument {
   graphicStyles: DesignGraphicStyle[];
   imageFills: DesignImageFill[];
 }
-

@@ -4,7 +4,8 @@
 - [x] Upload flow works with real `.pub` input.
 - [x] Job status is visible from start to finish.
 - [x] Downloadable `IDML` is produced.
-- [x] Quality report distinguishes exact, approximate, and unsupported mappings.
+- [x] Quality report exposes visual match, native audit, and release gate status.
+- [x] Page-by-page visual comparison is part of the release gate.
 
 ## Technical
 - [x] Parser strategy documented and initial OLE inspection implementation created.
@@ -12,6 +13,7 @@
 - [x] IDML export path implemented.
 - [x] Temporary file retention and cleanup verified.
 - [x] Run and deploy documentation written.
+- [x] Acceptance CLI implemented for manifest-driven corpora.
 
 ## Production
 - [ ] GitHub Pages frontend deployed.
@@ -22,4 +24,4 @@
 - [x] Adobe/InDesign document-open validation evidence captured.
 
 ## Current Release Call
-- Locally ready and verified. Public deployment remains blocked by runtime platform constraints.
+- Locally ready and verified against the current acceptance corpus. Public deployment remains blocked by runtime platform constraints.
