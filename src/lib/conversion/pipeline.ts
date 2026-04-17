@@ -6,9 +6,9 @@ import type { ConversionReport } from "./report.js";
 import { exportModelToIdml } from "../indesign/export-model-to-idml.js";
 import { exportIdmlToPdfAndAudit } from "../indesign/quality.js";
 import { convertPubToPdf } from "../libreoffice/convert.js";
-import { parsePdfDocument } from "../pdf/parser.js";
 import { inspectPubOle, writeInspectionArtifact } from "../pub/ole-inspector.js";
-import { comparePdfVisuals, renderPdfPages } from "../verification/pdf-diff.js";
+import { parsePubDocument } from "../pub/raw-parser.js";
+import { comparePdfVisuals } from "../verification/pdf-diff.js";
 
 export interface ConversionArtifacts {
   pubInspectionPath: string;
@@ -47,8 +47,7 @@ export async function runConversionPipeline(
     ? (await mkdir(referenceDir, { recursive: true }), await copyFile(path.resolve(options.referencePdfPath), generatedReferencePdfPath), generatedReferencePdfPath)
     : await convertPubToPdf(pubPath, referenceDir);
   const assetsDir = path.join(outputRoot, "assets");
-  const { document, assetMap } = await parsePdfDocument(referencePdfPath, assetsDir);
-  const backgroundPages = await renderPdfPages(referencePdfPath, path.join(outputRoot, "backgrounds"));
+  const { document, assetMap } = await parsePubDocument(pubPath, assetsDir);
   const modelPath = path.join(outputRoot, "model", `${baseName}.model.json`);
 
   await mkdir(path.dirname(modelPath), { recursive: true });
@@ -57,7 +56,6 @@ export async function runConversionPipeline(
   const { idmlPath, reportPath } = await exportModelToIdml({
     document,
     assetMap,
-    backgroundPages,
     outputDir: path.join(outputRoot, "exports"),
     baseName
   });
@@ -80,7 +78,7 @@ export async function runConversionPipeline(
   if (!report.releaseApproved) {
     const reasons = [
       !report.pageCountMatches ? "sidantalet matchar inte referensen" : null,
-      !report.visualMatchPassed ? "visuell diff hittade skillnader" : null,
+      !report.structuralMatchPassed ? "strukturell layoutmatchning misslyckades" : null,
       !report.nativeAuditPassed ? "native-audit misslyckades" : null
     ].filter(Boolean);
 

@@ -1,18 +1,19 @@
 # Pub2InDesign
 
-Pub2InDesign is a local web app that converts a Microsoft Publisher `.pub` file into an InDesign-compatible `IDML`, verifies the result in Adobe InDesign 2026, and runs a visual acceptance comparison before a job is treated as complete.
+Pub2InDesign is a local web app that converts a Microsoft Publisher `.pub` file into an InDesign-compatible `IDML`, verifies the result in Adobe InDesign 2026, and applies a structural acceptance gate before a job is treated as complete.
 
 ## What Works
 - Drag-and-drop or standard upload of `.pub` files
 - Server-side conversion jobs with status polling
-- Publisher ingest through LibreOffice-generated PDF plus PDF layout extraction
-- IDML export through Adobe InDesign scripting
+- Publisher ingest through `libmspub` raw extraction
+- Native threaded IDML export through Adobe InDesign scripting
 - Downloadable result file plus machine-readable acceptance report
 - Post-export validation by reopening the generated IDML in InDesign
-- Visual page-by-page comparison using PDF rasterization and pixelmatch
+- Structural verification for column layout, threaded stories, and duplicated page content
+- Legacy visual page-by-page comparison using PDF rasterization and pixelmatch for diagnostics
 
 ## Runtime Flow
-`Publisher (.pub) -> LibreOffice PDF -> PDF layout extraction -> Adobe InDesign scripted reconstruction -> IDML -> InDesign PDF export -> visual diff`
+`Publisher (.pub) -> libmspub raw parse -> internal model -> Adobe InDesign threaded reconstruction -> IDML -> InDesign PDF export -> structural audit`
 
 ## Run
 Requirements on this machine:
@@ -55,6 +56,7 @@ http://localhost:3000
 - Per-job outputs: `runtime/jobs/<job-id>/`
 
 ## Acceptance
-- A job is only considered complete when `visualMatchPassed`, `nativeAuditPassed`, and `releaseApproved` are all `true`.
-- The current visual threshold is `0.3`, which filters out renderer-level noise while still flagging visible page differences.
+- A job is only considered complete when `structuralMatchPassed`, `nativeAuditPassed`, and `releaseApproved` are all `true`.
+- Structural acceptance currently blocks duplicated page content, missing multi-column layouts, and background surrogate tricks.
+- The visual diff remains in the report as a diagnostic against the LibreOffice-rendered fallback PDF and is not the release gate.
 - Acceptance manifests live under `acceptance/**/manifest.json`.

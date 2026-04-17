@@ -263,6 +263,7 @@ function extractFrame(
   if (hasText) {
     return {
       kind: "textFrame",
+      id: `odg-text-frame-${Math.random().toString(36).slice(2, 10)}`,
       styleId: (node["draw:style-name"] ?? node["style-name"]) as string | undefined,
       xPt: cmStringToPt((node["svg:x"] ?? node.x) as string | undefined) ?? 0,
       yPt: cmStringToPt((node["svg:y"] ?? node.y) as string | undefined) ?? 0,
@@ -342,6 +343,15 @@ export function parseOdgDocument(filePath: string): DesignDocument {
     pageWidthPt: layout.widthPt,
     pageHeightPt: layout.heightPt,
     pages,
+    textStories: [],
+    layoutAnalysis: pages.map((page, index) => ({
+      pageId: page.id,
+      pageNumber: index + 1,
+      textFrameCount: page.items.filter((item) => item.kind === "textFrame").length,
+      columnCount: 1,
+      columnBands: [],
+      pageTextFingerprint: ""
+    })),
     paragraphStyles,
     characterStyles,
     graphicStyles,
@@ -358,4 +368,3 @@ export async function writeParsedOdgArtifact(document: DesignDocument): Promise<
 
   return outputPath;
 }
-

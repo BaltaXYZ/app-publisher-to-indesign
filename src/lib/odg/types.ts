@@ -37,6 +37,8 @@ export interface DesignTextRun {
   characterStyleId?: string;
   fontFamily?: string;
   fontSizePt?: number;
+  fontWeight?: string;
+  fontStyle?: string;
   color?: DesignColor;
 }
 
@@ -47,12 +49,16 @@ export interface DesignParagraph {
 
 export interface DesignTextFrame {
   kind: "textFrame";
+  id: string;
   styleId?: string;
   xPt: number;
   yPt: number;
   widthPt: number;
   heightPt: number;
-  paragraphs: DesignParagraph[];
+  columnCount?: number;
+  columnGapPt?: number;
+  storyId?: string;
+  paragraphs?: DesignParagraph[];
 }
 
 export interface DesignShape {
@@ -78,11 +84,28 @@ export interface DesignPage {
   items: DesignPageItem[];
 }
 
+export interface DesignTextStory {
+  id: string;
+  fingerprint: string;
+  paragraphs: DesignParagraph[];
+}
+
+export interface PageLayoutAnalysis {
+  pageId: string;
+  pageNumber: number;
+  textFrameCount: number;
+  columnCount: number;
+  columnBands: Array<{ leftPt: number; rightPt: number }>;
+  pageTextFingerprint: string;
+}
+
 export interface DesignDocument {
   sourcePath: string;
   pageWidthPt: number;
   pageHeightPt: number;
   pages: DesignPage[];
+  textStories: DesignTextStory[];
+  layoutAnalysis: PageLayoutAnalysis[];
   paragraphStyles: DesignParagraphStyle[];
   characterStyles: DesignCharacterStyle[];
   graphicStyles: DesignGraphicStyle[];

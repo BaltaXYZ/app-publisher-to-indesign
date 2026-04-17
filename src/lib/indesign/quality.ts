@@ -11,6 +11,13 @@ export interface InDesignAuditResult {
   missingLinks: string[];
   fontIssues: string[];
   fullPagePdfPlacements: string[];
+  fullPageImagePlacements: string[];
+  pageSummaries: Array<{
+    pageNumber: number;
+    textFingerprint: string;
+    textFrameCount: number;
+    maxColumnCount: number;
+  }>;
   nativeAuditPassed: boolean;
 }
 
@@ -33,6 +40,22 @@ export async function exportIdmlToPdfAndAudit(idmlPath: string, outputPdfPath: s
     var items = [];
     for (var index = 0; index < values.length; index += 1) {
       items.push(jsonString(values[index]));
+    }
+    return "[" + items.join(",") + "]";
+  }
+
+  function jsonPageSummaries(values) {
+    var items = [];
+    for (var index = 0; index < values.length; index += 1) {
+      var value = values[index];
+      items.push(
+        "{" +
+          "\\"pageNumber\\":" + value.pageNumber + "," +
+          "\\"textFingerprint\\":" + jsonString(value.textFingerprint) + "," +
+          "\\"textFrameCount\\":" + value.textFrameCount + "," +
+          "\\"maxColumnCount\\":" + value.maxColumnCount +
+        "}"
+      );
     }
     return "[" + items.join(",") + "]";
   }
@@ -74,6 +97,8 @@ export async function exportIdmlToPdfAndAudit(idmlPath: string, outputPdfPath: s
     var missingLinks = [];
     var fontIssues = [];
     var fullPagePdfPlacements = [];
+    var fullPageImagePlacements = [];
+    var pageSummaries = [];
     var totalTables = 0;
     var oversetText = false;
 
@@ -128,11 +153,50 @@ export async function exportIdmlToPdfAndAudit(idmlPath: string, outputPdfPath: s
       if (Math.abs(bounds[0]) <= 2 && Math.abs(bounds[1]) <= 2 &&
           Math.abs(width - doc.documentPreferences.pageWidth) <= 2 &&
           Math.abs(height - doc.documentPreferences.pageHeight) <= 2) {
-        fullPagePdfPlacements.push(linkName);
+        if (linkName.toLowerCase().slice(-4) === ".pdf") {
+          fullPagePdfPlacements.push(linkName);
+        } else {
+          fullPageImagePlacements.push(linkName || "full-page-graphic");
+        }
       }
     }
 
-    var nativeAuditPassed = !oversetText && missingLinks.length === 0 && fontIssues.length === 0 && fullPagePdfPlacements.length === 0 && doc.textFrames.length > 0;
+    for (var pageIndex = 0; pageIndex < doc.pages.length; pageIndex += 1) {
+      var page = doc.pages[pageIndex];
+      var frames = page.textFrames;
+      var pageText = [];
+      var maxColumnCount = 0;
+
+      for (var frameIndex = 0; frameIndex < frames.length; frameIndex += 1) {
+        var frame = frames[frameIndex];
+        try {
+          pageText.push(String(frame.contents || ""));
+        } catch (error) {
+          pageText.push("");
+        }
+
+        try {
+          maxColumnCount = Math.max(maxColumnCount, Number(frame.textFramePreferences.textColumnCount || 1));
+        } catch (error) {
+          maxColumnCount = Math.max(maxColumnCount, 1);
+        }
+      }
+
+      var combinedPageText = pageText.join(" ").replace(/\\s+/g, " ").replace(/^\\s+|\\s+$/g, "");
+      pageSummaries.push({
+        pageNumber: pageIndex + 1,
+        textFingerprint: combinedPageText,
+        textFrameCount: frames.length,
+        maxColumnCount: maxColumnCount
+      });
+    }
+
+    var nativeAuditPassed = !oversetText &&
+      missingLinks.length === 0 &&
+      fontIssues.length === 0 &&
+      fullPagePdfPlacements.length === 0 &&
+      fullPageImagePlacements.length === 0 &&
+      doc.textFrames.length > 0;
 
     return "{" +
       "\\"pageCount\\":" + doc.pages.length + "," +
@@ -143,6 +207,8 @@ export async function exportIdmlToPdfAndAudit(idmlPath: string, outputPdfPath: s
       "\\"missingLinks\\":" + jsonArray(missingLinks) + "," +
       "\\"fontIssues\\":" + jsonArray(fontIssues) + "," +
       "\\"fullPagePdfPlacements\\":" + jsonArray(fullPagePdfPlacements) + "," +
+      "\\"fullPageImagePlacements\\":" + jsonArray(fullPageImagePlacements) + "," +
+      "\\"pageSummaries\\":" + jsonPageSummaries(pageSummaries) + "," +
       "\\"nativeAuditPassed\\":" + (nativeAuditPassed ? "true" : "false") +
     "}";
   } finally {

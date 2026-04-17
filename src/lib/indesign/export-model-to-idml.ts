@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { DesignDocument } from "../odg/types.js";
+import type { DesignDocument, DesignParagraph } from "../odg/types.js";
 import { runInDesignJavaScriptFile } from "./applescript.js";
 
 function escapeForExtendScriptPath(value: string): string {
@@ -179,6 +179,12 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
   var model = ${modelLiteral};
   var assetMap = ${assetMapLiteral};
   var idmlFile = new File("${escapedIdmlPath}");
+  var storyMap = {};
+  for (var storyIndex = 0; storyIndex < model.textStories.length; storyIndex += 1) {
+    storyMap[model.textStories[storyIndex].id] = model.textStories[storyIndex];
+  }
+  var previousFrameByStory = {};
+  var rootFrameByStory = {};
 
   app.scriptPreferences.userInteractionLevel = UserInteractionLevels.NEVER_INTERACT;
 
@@ -210,11 +216,37 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
         var textFrame = page.textFrames.add();
         textFrame.geometricBounds = bounds;
         textFrame.textFramePreferences.insetSpacing = [0, 0, 0, 0];
-        textFrame.contents = paragraphsToString(item.paragraphs);
-        if (item.paragraphs.length === 1 && item.paragraphs[0].runs.length === 1) {
-          applyCharacterFormatting(textFrame.parentStory.characters.everyItem(), item.paragraphs[0].runs[0], doc);
+        if (item.columnCount && item.columnCount > 1) {
+          try {
+            textFrame.textFramePreferences.textColumnCount = item.columnCount;
+          } catch (error) {}
         }
-        applyTextStyles(textFrame.parentStory, item.paragraphs, doc);
+        if (item.columnGapPt !== undefined) {
+          try {
+            textFrame.textFramePreferences.textColumnGutter = item.columnGapPt;
+          } catch (error) {}
+        }
+
+        if (item.storyId) {
+          if (!rootFrameByStory[item.storyId]) {
+            rootFrameByStory[item.storyId] = textFrame;
+          }
+
+          if (previousFrameByStory[item.storyId]) {
+            try {
+              previousFrameByStory[item.storyId].nextTextFrame = textFrame;
+            } catch (error) {}
+          }
+
+          previousFrameByStory[item.storyId] = textFrame;
+        } else {
+          var inlineParagraphs = item.paragraphs || [];
+          textFrame.contents = paragraphsToString(inlineParagraphs);
+          if (inlineParagraphs.length === 1 && inlineParagraphs[0].runs.length === 1) {
+            applyCharacterFormatting(textFrame.parentStory.characters.everyItem(), inlineParagraphs[0].runs[0], doc);
+          }
+          applyTextStyles(textFrame.parentStory, inlineParagraphs, doc);
+        }
       } else {
         var rect = page.rectangles.add();
         rect.geometricBounds = bounds;
@@ -230,6 +262,20 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
     }
   }
 
+  for (var storyId in rootFrameByStory) {
+    if (!rootFrameByStory.hasOwnProperty(storyId) || !storyMap[storyId]) {
+      continue;
+    }
+
+    var storyFrame = rootFrameByStory[storyId];
+    var paragraphs = storyMap[storyId].paragraphs || [];
+    storyFrame.contents = paragraphsToString(paragraphs);
+    if (paragraphs.length === 1 && paragraphs[0].runs.length === 1) {
+      applyCharacterFormatting(storyFrame.parentStory.characters.everyItem(), paragraphs[0].runs[0], doc);
+    }
+    applyTextStyles(storyFrame.parentStory, paragraphs, doc);
+  }
+
   doc.exportFile(ExportFormat.INDESIGN_MARKUP, idmlFile);
   doc.close(SaveOptions.NO);
   "ok";
@@ -239,11 +285,10 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
 export async function exportModelToIdml(options: {
   document: DesignDocument;
   assetMap: Map<string, string>;
-  backgroundPages?: string[];
   outputDir: string;
   baseName: string;
 }): Promise<{ idmlPath: string; reportPath: string }> {
-  const { document, assetMap, backgroundPages = [], outputDir, baseName } = options;
+  const { document, assetMap, outputDir, baseName } = options;
   await mkdir(outputDir, { recursive: true });
 
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "pub2indesign-export-"));
@@ -252,36 +297,7 @@ export async function exportModelToIdml(options: {
   const reportPath = path.join(outputDir, `${baseName}.report.json`);
 
   try {
-    const backgroundLiteral = toExtendScriptLiteral(backgroundPages.map((pagePath) => escapeForExtendScriptPath(path.resolve(pagePath))));
-    const baseScript = buildExporterScript(document, Object.fromEntries(assetMap), idmlPath);
-    const script = baseScript.replace(
-      "  var idmlFile = new File(\"" + escapeForExtendScriptPath(idmlPath) + "\");",
-      "  var idmlFile = new File(\"" +
-        escapeForExtendScriptPath(idmlPath) +
-        "\");\n  var backgroundPages = " +
-        backgroundLiteral +
-        ";"
-    ).replace(
-      "    for (var itemIndex = 0; itemIndex < sourcePage.items.length; itemIndex += 1) {",
-      "    if (backgroundPages[pageIndex]) {\n" +
-        "      var backgroundRect = page.rectangles.add();\n" +
-        "      backgroundRect.geometricBounds = [0, 0, model.pageHeightPt, model.pageWidthPt];\n" +
-        "      backgroundRect.strokeWeight = 0;\n" +
-        "      backgroundRect.place(File(backgroundPages[pageIndex]));\n" +
-        "      backgroundRect.fit(FitOptions.CONTENT_TO_FRAME);\n" +
-        "    }\n\n" +
-        "    for (var itemIndex = 0; itemIndex < sourcePage.items.length; itemIndex += 1) {"
-    ).replace(
-      "      } else {",
-      "        if (backgroundPages[pageIndex]) {\n" +
-        "          textFrame.transparencySettings.blendingSettings.opacity = 0;\n" +
-        "        }\n" +
-        "      } else {\n" +
-        "        if (backgroundPages[pageIndex]) {\n" +
-        "          continue;\n" +
-        "        }"
-    );
-
+    const script = buildExporterScript(document, Object.fromEntries(assetMap), idmlPath);
     await writeFile(scriptPath, script, "utf8");
     await runInDesignJavaScriptFile(scriptPath);
 

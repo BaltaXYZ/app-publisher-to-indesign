@@ -71,7 +71,7 @@ async function pollJob(jobId) {
     renderReport(report);
     return true;
   } else if (job.status === "completed") {
-    statusText.textContent = "Konverteringen är klar och passerade både InDesign-audit och visuell jämförelse.";
+    statusText.textContent = "Konverteringen är klar och passerade native-audit samt den strukturella layoutkontrollen.";
     resultPanel.hidden = false;
     downloadLink.hidden = false;
     downloadLink.href = `/api/jobs/${job.id}/result`;
@@ -91,19 +91,24 @@ function renderReport(report) {
   }
 
   renderList(acceptanceList, [
-    `Visuell match: ${report.visualMatchPassed ? "godkänd" : "underkänd"}`,
+    `Strukturell match: ${report.structuralMatchPassed ? "godkänd" : "underkänd"}`,
+    `Kolumnstruktur: ${report.columnStructureMatches ? "godkänd" : "underkänd"}`,
+    `Sidduplicering: ${report.duplicatePageContentDetected ? "upptäckt" : "ingen upptäckt"}`,
     `Native audit: ${report.nativeAuditPassed ? "godkänd" : "underkänd"}`,
     `Release gate: ${report.releaseApproved ? "godkänd" : "underkänd"}`,
-    `Visuell difftröskel: ${report.visualDiffThreshold}`
+    `Visuell diff: ${report.visualMatchPassed ? "godkänd" : "underkänd"}`
   ]);
 
   renderList(qualityList, [
     `Sidor: ${report.pageCount}`,
     `Textframes: ${report.convertedTextFrames}`,
     `Grafikobjekt: ${report.totalGraphics}`,
+    `Förväntade kolumner: ${(report.expectedPageColumns ?? []).join(", ") || "okänt"}`,
+    `Faktiska kolumner: ${(report.actualPageColumns ?? []).join(", ") || "okänt"}`,
     `Overset text: ${report.oversetText ? "ja" : "nej"}`,
     `Saknade länkar: ${report.missingLinks.length}`,
-    `Fontproblem: ${report.fontIssues.length}`
+    `Fontproblem: ${report.fontIssues.length}`,
+    `Bakgrundssurrogat: ${report.backgroundSurrogatesDetected ? "ja" : "nej"}`
   ]);
 
   const differingPages = (report.pageDiffs ?? [])
