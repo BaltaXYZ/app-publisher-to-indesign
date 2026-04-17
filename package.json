@@ -1,0 +1,24 @@
+{
+  "name": "pub2indesign",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Feasibility spike and application code for Publisher to InDesign conversion.",
+  "scripts": {
+    "check:indesign": "tsx src/cli/check-indesign.ts",
+    "inspect:pub": "tsx src/cli/inspect-pub.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "cfb": "^1.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}
+

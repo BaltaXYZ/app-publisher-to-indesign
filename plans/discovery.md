@@ -29,5 +29,4 @@
 - Billing, organization features, advanced queueing.
 
 ## Next Discovery Gate
-Proceed to feasibility spike only after at least one representative `.pub` file is available.
-
+Proceeding into feasibility spike with `Testfokus.pub` and verified AppleScript access to `Adobe InDesign 2026`.

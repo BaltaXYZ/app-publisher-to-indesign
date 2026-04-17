@@ -8,8 +8,8 @@
 - [x] Record blockers, release criteria, and discovery state.
 
 ### EPIC-02 Feasibility Spike
-- [ ] Ingest first representative `.pub` fixture.
-- [ ] Evaluate extraction options and choose parser strategy.
+- [x] Ingest first representative `.pub` fixture.
+- [x] Evaluate extraction options and choose parser strategy.
 - [ ] Define internal document model.
 - [ ] Generate a minimal IDML artifact from extracted structure.
 - [ ] Verify result opens in InDesign.
@@ -26,9 +26,14 @@
 - [ ] Swatches and color handling.
 - [ ] Quality report generation.
 
+## Immediate Next Tasks
+- [ ] Decode the `Contents` and `Quill/QuillSub/CONTENTS` streams from `Testfokus.pub`.
+- [ ] Map the discovered structures into a first internal document model draft.
+- [ ] Explore `EscherStm` and `EscherDelayStm` as the likely drawing/object layers.
+- [ ] Attempt a first minimal `IDML` package that can be opened by InDesign.
+
 ### EPIC-05 Release
 - [ ] GitHub Pages frontend deployment.
 - [ ] Vercel backend deployment.
 - [ ] Environment variable verification.
 - [ ] Public end-to-end validation.
-

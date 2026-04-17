@@ -2,20 +2,18 @@
 
 ## Active External Blockers
 
-### BLK-001 Representative `.pub` Fixtures Missing
-- Status: open
-- Owner: user / external input
-- Impact: No meaningful feasibility spike, fidelity testing, or parser validation can begin.
-- Unblocks when: One or more representative `.pub` files are placed in this workspace.
-
-### BLK-002 Adobe/InDesign Validation Path Not Yet Verified
-- Status: open
-- Owner: user / external credential handoff
-- Impact: Full release readiness cannot be claimed because actual InDesign compatibility cannot yet be validated autonomously.
-- Unblocks when: The agent can use an Adobe/InDesign-capable environment, API, or equivalent automated validation path.
+- None at the moment for the feasibility spike.
 
 ## Resolved Blockers
 
 ### BLK-000 Repository and Hosting Direction
 - Status: resolved
 - Resolution: GitHub repository exists and Vercel account access is already available in this environment.
+
+### BLK-001 Representative `.pub` Fixtures Missing
+- Status: resolved
+- Resolution: `Testfokus.pub` is now present in the workspace root and can be used for the first feasibility spike.
+
+### BLK-002 Adobe/InDesign Validation Path Not Yet Verified
+- Status: resolved
+- Resolution: `Adobe InDesign 2026` is installed and reachable from the agent via AppleScript, which is sufficient to begin automated validation experiments.

@@ -7,7 +7,7 @@
 - [ ] Quality report distinguishes exact, approximate, and unsupported mappings.
 
 ## Technical
-- [ ] Parser strategy documented and implemented.
+- [x] Parser strategy documented and initial OLE inspection implementation created.
 - [ ] Internal document model documented.
 - [ ] IDML export path implemented.
 - [ ] Temporary file retention and cleanup verified.
@@ -18,8 +18,8 @@
 - [ ] Vercel backend deployed.
 - [ ] Required environment variables configured.
 - [ ] Public environment verified end-to-end.
-- [ ] Adobe/InDesign validation evidence captured.
+- [x] Adobe/InDesign CLI validation path verified.
+- [ ] Adobe/InDesign document-open validation evidence captured.
 
 ## Current Release Call
-- Not ready.
-
+- Not ready. Feasibility spike can now begin, but no conversion evidence exists yet.

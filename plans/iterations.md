@@ -28,5 +28,10 @@ Prove the first viable `.pub -> internal model -> IDML` path with real fixture d
 - Verification evidence captured.
 
 ### Status
-- Blocked externally.
+- In progress.
 
+### Evidence So Far
+- `Testfokus.pub` identified as a classic OLE/CFB compound document.
+- Inspection script now inventories the container and writes an artifact report.
+- The first stream map shows `Contents`, `Quill`, and `Escher` structures as likely core extraction targets.
+- `Adobe InDesign 2026` responds to CLI-driven AppleScript checks from the repo environment.

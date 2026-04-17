@@ -20,3 +20,7 @@
 - Decision: Real `.pub` fixtures and Adobe/InDesign validation remain mandatory before claiming full release readiness.
 - Why: The product promise depends on real-world fidelity and actual InDesign compatibility.
 
+## DEC-005 First Feasibility Parser Step
+- Status: accepted
+- Decision: Start the spike by inspecting the Publisher file as an OLE Compound File Binary container and inventorying its streams before choosing a deeper extraction layer.
+- Why: `Testfokus.pub` is a classic CFB/OLE file, so stream-level inspection is the safest first proof step and reduces blind parser work.

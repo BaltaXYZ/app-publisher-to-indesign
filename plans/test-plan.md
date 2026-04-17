@@ -12,8 +12,12 @@
 - Quality report reviewed for exact, approximate, and unsupported mappings.
 - Adobe/InDesign open validation completed in the agreed target environment.
 
+## Current Verified Evidence
+- `Testfokus.pub` is available as the first representative fixture.
+- CLI validation confirms `Adobe InDesign 2026` is reachable and reports version `21.3.0.60`.
+- OLE inspection of `Testfokus.pub` succeeds and produces a machine-readable artifact under `artifacts/inspection/`.
+
 ## Current Gaps
 - No fixture files yet.
 - No Adobe validation path verified yet.
 - No implementation exists yet beyond governance files.
-
