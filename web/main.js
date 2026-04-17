@@ -12,6 +12,7 @@ const approxList = document.getElementById("approx-list");
 const unsupportedList = document.getElementById("unsupported-list");
 
 let pollTimer = null;
+let activeJobId = null;
 
 function setSelectedFile() {
   const file = fileInput.files?.[0];
@@ -42,7 +43,12 @@ function renderList(target, items) {
 }
 
 async function pollJob(jobId) {
-  const response = await fetch(`/api/jobs/${jobId}`);
+  const response = await fetch(`/api/jobs/${jobId}?t=${Date.now()}`, {
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache"
+    }
+  });
   const payload = await response.json();
 
   if (!response.ok) {
@@ -55,21 +61,51 @@ async function pollJob(jobId) {
 
   if (job.status === "uploaded") {
     statusText.textContent = "Filen är uppladdad och väntar på att bearbetas.";
+    return false;
   } else if (job.status === "processing") {
     statusText.textContent = "Konverteringen körs. Det här kan ta en stund beroende på dokumentets innehåll.";
+    return false;
   } else if (job.status === "failed") {
     statusText.textContent = `Konverteringen misslyckades: ${job.error ?? "okänt fel"}`;
-    clearInterval(pollTimer);
+    return true;
   } else if (job.status === "completed") {
     statusText.textContent = "Konverteringen är klar och IDML-filen har verifierats i InDesign.";
-    clearInterval(pollTimer);
     resultPanel.hidden = false;
     downloadLink.hidden = false;
     downloadLink.href = `/api/jobs/${job.id}/result`;
     renderList(exactList, report?.exact);
     renderList(approxList, report?.approximate);
     renderList(unsupportedList, report?.unsupported);
+    return true;
   }
+
+  return false;
+}
+
+function stopPolling() {
+  if (pollTimer !== null) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+}
+
+function schedulePoll(jobId) {
+  stopPolling();
+
+  pollTimer = setTimeout(async () => {
+    try {
+      const isTerminal = await pollJob(jobId);
+      if (isTerminal || activeJobId !== jobId) {
+        stopPolling();
+        return;
+      }
+
+      schedulePoll(jobId);
+    } catch (error) {
+      statusText.textContent = error.message;
+      stopPolling();
+    }
+  }, 1500);
 }
 
 dropzone.addEventListener("dragover", (event) => {
@@ -126,14 +162,28 @@ form.addEventListener("submit", async (event) => {
   }
 
   const jobId = payload.job.id;
+  activeJobId = jobId;
   jobIdText.textContent = `Jobb: ${jobId}`;
-  clearInterval(pollTimer);
-  await pollJob(jobId);
-  pollTimer = setInterval(() => {
-    pollJob(jobId).catch((error) => {
-      statusText.textContent = error.message;
-      clearInterval(pollTimer);
-    });
-  }, 2000);
+  stopPolling();
+  const isTerminal = await pollJob(jobId);
+  if (!isTerminal) {
+    schedulePoll(jobId);
+  }
 });
 
+document.addEventListener("visibilitychange", async () => {
+  if (document.hidden || !activeJobId) {
+    return;
+  }
+
+  try {
+    const isTerminal = await pollJob(activeJobId);
+    if (!isTerminal) {
+      schedulePoll(activeJobId);
+    } else {
+      stopPolling();
+    }
+  } catch (error) {
+    statusText.textContent = error.message;
+  }
+});

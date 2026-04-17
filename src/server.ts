@@ -31,6 +31,12 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 
 const jobs = new Map<string, JobRecord>();
 
 app.use(express.static(path.resolve("web")));
+app.use("/api", (_req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+});
 
 function serializeJob(job: JobRecord) {
   return {
@@ -142,6 +148,7 @@ app.get("/api/jobs/:jobId/result", async (req, res) => {
     return;
   }
 
+  res.setHeader("Cache-Control", "no-store");
   res.download(job.idmlPath, path.basename(job.idmlPath));
 });
 
