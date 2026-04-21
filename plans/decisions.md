@@ -34,3 +34,13 @@
 - Status: accepted
 - Decision: Treat the current release as a verified local runtime release, while marking Vercel-based public deployment as unresolved.
 - Why: Vercel Functions are not a realistic primary runtime for a LibreOffice + Adobe/InDesign conversion engine.
+
+## DEC-008 Canonical Publisher Text Source
+- Status: accepted
+- Decision: Use `Root Entry/Quill/QuillSub/CONTENTS` as the canonical story text source when `pub2raw` degenerates into one-character paragraphs, while keeping `pub2raw` for page geometry, columns, images, and style hints.
+- Why: `Testfokus.pub` exposes a real libmspub failure where the visible story tail becomes hundreds of one-character paragraphs. Quill preserves the readable text needed for native InDesign reconstruction.
+
+## DEC-009 Text Flow Regression Gate
+- Status: accepted
+- Decision: The release gate now blocks malformed one-character story flows, missing first-page one-column intro flow, missing two-column main flow, missing footer labels, overset text, font substitution issues, and missing canonical text coverage.
+- Why: These were the concrete regressions observed in the generated `IDML`; they must be machine-checked so the UI cannot report success for a structurally wrong document.

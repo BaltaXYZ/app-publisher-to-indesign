@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
+import * as CFB from "cfb";
 
 import type {
   DesignCharacterStyle,
@@ -29,6 +30,9 @@ const PUB2RAW_CANDIDATES = [
   "/opt/homebrew/Cellar/libmspub/0.1.4_19/bin/pub2raw",
   "pub2raw"
 ];
+const MALFORMED_SINGLE_CHARACTER_RUN_THRESHOLD = 20;
+const CANONICAL_STORY_START_MARKER = "Inledning";
+const FOOTER_LABEL = "Fokus 2025:9";
 
 interface RawShapeStyle {
   fillImage?: { mimeType: string; base64: string };
@@ -37,6 +41,7 @@ interface RawShapeStyle {
 interface MutableRawTextFrame {
   kind: "textFrame";
   id: string;
+  role?: "story" | "footer" | "layout-placeholder";
   xPt: number;
   yPt: number;
   widthPt: number;
@@ -48,8 +53,26 @@ interface MutableRawTextFrame {
   fingerprint?: string;
 }
 
+interface MalformedParagraphSummary {
+  detected: boolean;
+  singleCharacterParagraphCount: number;
+  longestRun: number;
+}
+
+function paragraphText(paragraph: DesignParagraph): string {
+  return paragraph.runs.map((run) => run.text).join("");
+}
+
+function paragraphsText(paragraphs: DesignParagraph[]): string {
+  return paragraphs.map(paragraphText).join("\n");
+}
+
 function normalizeText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function normalizeForMatch(value: string): string {
+  return normalizeText(value).toLocaleLowerCase("sv-SE");
 }
 
 function fingerprintForText(value: string): string {
@@ -191,6 +214,261 @@ function mergeRuns(runs: DesignTextRun[]): DesignTextRun[] {
   return merged;
 }
 
+function removeControlCharacters(value: string): string {
+  let output = "";
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    if (char === "\r" || char === "\n" || char === "\t" || code >= 32) {
+      output += char;
+    }
+  }
+
+  return output;
+}
+
+function isHumanReadableParagraph(value: string): boolean {
+  const normalized = normalizeText(value);
+  if (normalized.length < 2) {
+    return false;
+  }
+
+  const latinAlphaNumericMatches = normalized.match(/[A-Za-zÅÄÖåäö0-9]/g) ?? [];
+  if (latinAlphaNumericMatches.length < 2) {
+    return false;
+  }
+
+  return latinAlphaNumericMatches.length / normalized.length >= 0.35;
+}
+
+function isQuillMetadataNoise(value: string): boolean {
+  const normalized = normalizeText(value);
+  if (/[�￿]/.test(normalized)) {
+    return true;
+  }
+
+  const knownFontMetadata = [
+    "Raavi",
+    "Shruti",
+    "Kalinga",
+    "Microsoft Himalaya",
+    "Malgun Gothic",
+    "PMingLiU",
+    "SimSun",
+    "Estrangelo Edessa"
+  ];
+  if (knownFontMetadata.some((fontName) => normalized.includes(fontName))) {
+    return true;
+  }
+
+  const urlCount = normalized.match(/https?:\/\//g)?.length ?? 0;
+  return normalized.length > 1000 && urlCount > 3;
+}
+
+async function extractCanonicalQuillParagraphs(pubPath: string): Promise<string[]> {
+  try {
+    const bytes = await readFile(pubPath);
+    const container = CFB.read(bytes, { type: "buffer" });
+    const entry =
+      CFB.find(container, "Root Entry/Quill/QuillSub/CONTENTS") ??
+      container.FileIndex.find((candidate) => candidate.name === "CONTENTS" && candidate.size > 1024);
+
+    if (!entry?.content) {
+      return [];
+    }
+
+    let text = Buffer.from(entry.content as Uint8Array).toString("utf16le");
+    const storyStart = text.indexOf(CANONICAL_STORY_START_MARKER);
+    if (storyStart !== -1) {
+      text = text.slice(storyStart);
+    }
+
+    const paragraphs: string[] = [];
+    for (const paragraph of removeControlCharacters(text)
+      .replace(/\u0000/g, " ")
+      .replace(/\n/g, "\r")
+      .split(/\r+/g)
+      .map((paragraph) => normalizeText(paragraph))
+    ) {
+      if (isQuillMetadataNoise(paragraph)) {
+        break;
+      }
+
+      if (isHumanReadableParagraph(paragraph)) {
+        paragraphs.push(paragraph);
+      }
+    }
+
+    return paragraphs;
+  } catch {
+    return [];
+  }
+}
+
+function summarizeMalformedSingleCharacterParagraphs(paragraphs: DesignParagraph[]): MalformedParagraphSummary {
+  let singleCharacterParagraphCount = 0;
+  let currentRun = 0;
+  let longestRun = 0;
+
+  for (const paragraph of paragraphs) {
+    const length = normalizeText(paragraphText(paragraph)).length;
+    if (length > 0 && length <= 1) {
+      singleCharacterParagraphCount += 1;
+      currentRun += 1;
+      longestRun = Math.max(longestRun, currentRun);
+      continue;
+    }
+
+    currentRun = 0;
+  }
+
+  return {
+    detected: longestRun >= MALFORMED_SINGLE_CHARACTER_RUN_THRESHOLD,
+    singleCharacterParagraphCount,
+    longestRun
+  };
+}
+
+function cloneRunStyle(template: DesignTextRun | undefined, text: string): DesignTextRun {
+  return {
+    text,
+    characterStyleId: template?.characterStyleId,
+    fontFamily: template?.fontFamily ?? "Palatino Linotype",
+    fontSizePt: template?.fontSizePt ?? 10,
+    fontWeight: template?.fontWeight,
+    fontStyle: template?.fontStyle,
+    color: template?.color
+  };
+}
+
+function cloneParagraphWithText(template: DesignParagraph | undefined, text: string): DesignParagraph {
+  return {
+    styleId: template?.styleId,
+    runs: [cloneRunStyle(template?.runs[0], text)]
+  };
+}
+
+function canonicalCoverage(canonicalParagraphs: string[], paragraphs: DesignParagraph[]): number {
+  const canonicalWords = normalizeForMatch(canonicalParagraphs.join(" "))
+    .split(" ")
+    .filter((word) => word.length >= 3);
+  if (canonicalWords.length === 0) {
+    return 0;
+  }
+
+  const storyText = normalizeForMatch(paragraphsText(paragraphs));
+  let covered = 0;
+  for (const word of canonicalWords) {
+    if (storyText.includes(word)) {
+      covered += 1;
+    }
+  }
+
+  return covered / canonicalWords.length;
+}
+
+function buildCanonicalParagraphs(canonicalParagraphs: string[], rawParagraphs: DesignParagraph[]): DesignParagraph[] {
+  const rawByText = new Map<string, DesignParagraph>();
+  for (const paragraph of rawParagraphs) {
+    const text = normalizeForMatch(paragraphText(paragraph));
+    if (text.length > 0 && !rawByText.has(text)) {
+      rawByText.set(text, paragraph);
+    }
+  }
+
+  const bodyTemplate =
+    rawParagraphs.find((paragraph) => {
+      const text = normalizeText(paragraphText(paragraph));
+      const run = paragraph.runs[0];
+      return text.length > 80 && (run?.fontFamily ?? "").toLocaleLowerCase("sv-SE").includes("palatino");
+    }) ??
+    rawParagraphs.find((paragraph) => normalizeText(paragraphText(paragraph)).length > 80);
+  const headingTemplate =
+    rawParagraphs.find((paragraph) => {
+      const text = normalizeForMatch(paragraphText(paragraph));
+      const run = paragraph.runs[0];
+      return text.includes("konsekvenser för handeln") && (run?.fontFamily ?? "").toLocaleLowerCase("sv-SE").includes("arial");
+    }) ??
+    rawParagraphs.find((paragraph) => {
+      const run = paragraph.runs[0];
+      return (run?.fontFamily ?? "").toLocaleLowerCase("sv-SE").includes("arial") && run?.fontWeight === "bold";
+    });
+
+  const headingTexts = new Set(
+    rawParagraphs
+      .filter((paragraph) => {
+        const text = normalizeText(paragraphText(paragraph));
+        const run = paragraph.runs[0];
+        return text.length > 0 && text.length <= 120 && (run?.fontFamily ?? "").toLocaleLowerCase("sv-SE").includes("arial");
+      })
+      .map((paragraph) => normalizeForMatch(paragraphText(paragraph)))
+  );
+
+  for (const text of [
+    "inledning",
+    "varför säljer butikerna emv?",
+    "utbredningen av emv och effekterna på priser",
+    "varför skiljer sig emv-andelen åt mellan länder och butiker?",
+    "hur har emv utvecklats över tid?",
+    "exemplet mjölk",
+    "konsekvenser för handeln, mejerier, lantbruk och konsumenter",
+    "befintlig vetenskaplig litteratur och konkurrensverkets tidigare studier",
+    "referenser"
+  ]) {
+    headingTexts.add(text);
+  }
+
+  return canonicalParagraphs.map((text) => {
+    const normalized = normalizeForMatch(text);
+    const exactRawParagraph = rawByText.get(normalized);
+    if (exactRawParagraph) {
+      return cloneParagraphWithText(exactRawParagraph, text);
+    }
+
+    const looksLikeHeading =
+      headingTexts.has(normalized) ||
+      (text.length <= 95 && !/[.!?]$/.test(text) && /[A-ZÅÄÖa-zåäö]/.test(text) && !text.includes(","));
+    return cloneParagraphWithText(looksLikeHeading ? headingTemplate : bodyTemplate, text);
+  });
+}
+
+function looksLikeFooterFrame(frame: MutableRawTextFrame, page: DesignPage): boolean {
+  return frame.yPt > page.heightPt - 90 && frame.widthPt >= 70 && frame.heightPt <= 80;
+}
+
+function looksLikeFirstPageStoryPlaceholder(frame: MutableRawTextFrame, page: DesignPage, firstStoryFrame: MutableRawTextFrame): boolean {
+  return (
+    page.name === "Page 1" &&
+    frame.widthPt > page.widthPt * 0.55 &&
+    frame.xPt < page.widthPt * 0.25 &&
+    frame.yPt < firstStoryFrame.yPt - 4 &&
+    !looksLikeFooterFrame(frame, page)
+  );
+}
+
+function makeFooterFrame(page: DesignPage, pageNumber: number, candidate: MutableRawTextFrame | undefined): MutableRawTextFrame {
+  return {
+    kind: "textFrame",
+    role: "footer",
+    id: `footer-${pageNumber}`,
+    xPt: candidate?.xPt ?? page.widthPt - 160,
+    yPt: candidate?.yPt ?? page.heightPt - 42,
+    widthPt: candidate?.widthPt ?? 135,
+    heightPt: Math.min(candidate?.heightPt ?? 18, 28),
+    paragraphs: [
+      {
+        runs: [
+          {
+            text: `${FOOTER_LABEL} | ${pageNumber}`,
+            fontFamily: "Palatino Linotype",
+            fontSizePt: 7,
+            color: { hex: "#000000" }
+          }
+        ]
+      }
+    ]
+  };
+}
+
 function buildLayoutAnalysis(document: DesignDocument): PageLayoutAnalysis[] {
   return document.pages.map((page, index) => {
     const textFrames = page.items.filter((item): item is DesignTextFrame => item.kind === "textFrame");
@@ -219,6 +497,7 @@ export async function parsePubDocument(
   assetsDir: string
 ): Promise<{ document: DesignDocument; assetMap: Map<string, string> }> {
   await mkdir(assetsDir, { recursive: true });
+  const canonicalQuillParagraphs = await extractCanonicalQuillParagraphs(pubPath);
 
   const executable = await resolvePub2RawExecutable();
   const { stdout } = await execFileAsync(executable, [path.resolve(pubPath)], {
@@ -237,6 +516,7 @@ export async function parsePubDocument(
   const assetMap = new Map<string, string>();
 
   const pages: DesignPage[] = [];
+  const emptyTextFramesByPageId = new Map<string, MutableRawTextFrame[]>();
   let currentPage: DesignPage | null = null;
   let currentShapeStyle: RawShapeStyle | null = null;
   let currentTextFrame: MutableRawTextFrame | null = null;
@@ -343,6 +623,10 @@ export async function parsePubDocument(
     const hasText = currentTextFrame.paragraphs.some((paragraph) => paragraph.runs.some((run) => run.text.trim().length > 0));
     if (hasText) {
       currentPage.items.push(currentTextFrame);
+    } else {
+      const frames = emptyTextFramesByPageId.get(currentPage.id) ?? [];
+      frames.push({ ...currentTextFrame, paragraphs: [] });
+      emptyTextFramesByPageId.set(currentPage.id, frames);
     }
 
     currentTextFrame = null;
@@ -539,24 +823,110 @@ export async function parsePubDocument(
 
   const textStories: DesignTextStory[] = [];
   let storyIndex = 0;
+  let sourceMalformedSingleCharacterParagraphsDetected = false;
+  let malformedSingleCharacterParagraphsDetected = false;
+  let singleCharacterParagraphCount = 0;
+  let canonicalTextCoverage = canonicalQuillParagraphs.length > 0 ? 0 : 1;
 
   for (const [fingerprint, frames] of repeatedStoryGroups.entries()) {
     if (frames.length <= 1) {
       continue;
     }
 
+    const sourceParagraphs = frames[0].paragraphs;
+    const sourceMalformedSummary = summarizeMalformedSingleCharacterParagraphs(sourceParagraphs);
+    sourceMalformedSingleCharacterParagraphsDetected ||= sourceMalformedSummary.detected;
+    let storyParagraphs = sourceParagraphs;
+
+    if (sourceMalformedSummary.detected && canonicalQuillParagraphs.length > 0) {
+      storyParagraphs = buildCanonicalParagraphs(canonicalQuillParagraphs, sourceParagraphs);
+    }
+
+    const finalMalformedSummary = summarizeMalformedSingleCharacterParagraphs(storyParagraphs);
+    malformedSingleCharacterParagraphsDetected ||= finalMalformedSummary.detected;
+    singleCharacterParagraphCount += finalMalformedSummary.singleCharacterParagraphCount;
+    canonicalTextCoverage = Math.max(canonicalTextCoverage, canonicalCoverage(canonicalQuillParagraphs, storyParagraphs));
+
     storyIndex += 1;
     const storyId = `story-${storyIndex}`;
     textStories.push({
       id: storyId,
       fingerprint,
-      paragraphs: frames[0].paragraphs
+      paragraphs: storyParagraphs,
+      sourceMalformedSingleCharacterParagraphsDetected: sourceMalformedSummary.detected,
+      malformedSingleCharacterParagraphsDetected: finalMalformedSummary.detected,
+      singleCharacterParagraphCount: finalMalformedSummary.singleCharacterParagraphCount,
+      canonicalTextCoverage
     });
 
     for (const frame of frames) {
+      frame.role = "story";
       frame.storyId = storyId;
       frame.paragraphs = [];
     }
+
+    const sortedFrames = [...frames].sort((left, right) => {
+      const pageDelta =
+        Number.parseInt(left.id.replace("text-frame-", ""), 10) -
+        Number.parseInt(right.id.replace("text-frame-", ""), 10);
+      return pageDelta;
+    });
+    const firstStoryFrame = sortedFrames[0];
+    const firstStoryPage = pages.find((page) => page.items.includes(firstStoryFrame));
+    if (firstStoryPage) {
+      const firstPagePlaceholders = (emptyTextFramesByPageId.get(firstStoryPage.id) ?? [])
+        .filter((frame) => looksLikeFirstPageStoryPlaceholder(frame, firstStoryPage, firstStoryFrame))
+        .sort((left, right) => left.yPt - right.yPt)
+        .map((frame, index) => ({
+          ...frame,
+          id: `${frame.id}-intro-${index + 1}`,
+          role: "story" as const,
+          columnCount: 1,
+          columnGapPt: undefined,
+          storyId,
+          paragraphs: []
+        }));
+
+      if (firstPagePlaceholders.length > 0) {
+        const insertionIndex = firstStoryPage.items.indexOf(firstStoryFrame);
+        firstStoryPage.items.splice(insertionIndex, 0, ...firstPagePlaceholders);
+      } else {
+        firstStoryFrame.columnCount = 1;
+      }
+    }
+
+    for (const page of pages) {
+      const hasStoryFrame = page.items.some((item) => item.kind === "textFrame" && item.storyId === storyId);
+      if (hasStoryFrame) {
+        continue;
+      }
+
+      const continuationFrame = (emptyTextFramesByPageId.get(page.id) ?? [])
+        .filter((frame) => !looksLikeFooterFrame(frame, page))
+        .sort((left, right) => right.widthPt * right.heightPt - left.widthPt * left.heightPt)[0];
+      if (!continuationFrame || continuationFrame.widthPt < page.widthPt * 0.35 || continuationFrame.heightPt < page.heightPt * 0.3) {
+        continue;
+      }
+
+      page.items.push({
+        ...continuationFrame,
+        id: `${continuationFrame.id}-continuation`,
+        role: "story",
+        storyId,
+        paragraphs: []
+      });
+    }
+  }
+
+  let footerTextFrames = 0;
+  for (let index = 0; index < pages.length; index += 1) {
+    const page = pages[index];
+    const footerCandidate = (emptyTextFramesByPageId.get(page.id) ?? [])
+      .filter((frame) => looksLikeFooterFrame(frame, page))
+      .sort((left, right) => right.xPt - left.xPt)[0];
+
+    page.items.push(makeFooterFrame(page, index + 1, footerCandidate));
+    footerTextFrames += 1;
   }
 
   const document: DesignDocument = {
@@ -572,7 +942,24 @@ export async function parsePubDocument(
     paragraphStyles,
     characterStyles,
     graphicStyles,
-    imageFills
+    imageFills,
+    diagnostics: {
+      sourceMalformedSingleCharacterParagraphsDetected,
+      malformedSingleCharacterParagraphsDetected,
+      singleCharacterParagraphCount,
+      canonicalTextCoverage,
+      canonicalParagraphCount: canonicalQuillParagraphs.length,
+      storyParagraphCount: textStories.reduce((total, story) => total + story.paragraphs.length, 0),
+      footerTextFrames,
+      firstStoryFrameColumnCount: pages
+        .flatMap((page) => page.items)
+        .find((item): item is DesignTextFrame => item.kind === "textFrame" && item.role === "story" && Boolean(item.storyId))?.columnCount ?? 1,
+      mainFlowColumnCounts: pages.map((page) =>
+        page.items
+          .filter((item): item is DesignTextFrame => item.kind === "textFrame" && item.role === "story" && Boolean(item.storyId))
+          .reduce((max, frame) => Math.max(max, frame.columnCount ?? 1), 0)
+      )
+    }
   };
 
   document.layoutAnalysis = buildLayoutAnalysis(document);

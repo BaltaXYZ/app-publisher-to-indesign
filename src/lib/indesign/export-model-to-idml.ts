@@ -61,14 +61,42 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
     return style;
   }
 
-  function resolveFont(fontName) {
-    var candidates = [fontName];
-    var lower = String(fontName).toLowerCase();
+  function fontStyleName(styleDef) {
+    var weight = String(styleDef.fontWeight || "").toLowerCase();
+    var fontStyle = String(styleDef.fontStyle || "").toLowerCase();
+    var family = String(styleDef.fontFamily || "").toLowerCase();
+    var wantsBold = weight === "bold" || family.indexOf("bold") !== -1;
+    var wantsItalic = fontStyle === "italic" || family.indexOf("italic") !== -1 || family.indexOf("oblique") !== -1;
+
+    if (wantsBold && wantsItalic) return "Bold Italic";
+    if (wantsBold) return "Bold";
+    if (wantsItalic) return "Italic";
+    return "Regular";
+  }
+
+  function resolveFont(styleDef) {
+    var fontName = String(styleDef.fontFamily || "");
+    var styleName = fontStyleName(styleDef);
+    var candidates = [];
+    var lower = fontName.toLowerCase();
+
+    if (fontName) candidates.push(fontName + "\\t" + styleName);
+    if (fontName) candidates.push(fontName);
 
     if (lower === "arial-boldmt") candidates.push("Arial\\tBold");
-    if (lower === "arialmt") candidates.push("Arial\\tRegular");
-    if (lower === "palatino-roman") candidates.push("Palatino\\tRegular");
-    if (lower === "timesnewromanpsmt") candidates.push("Times New Roman\\tRegular");
+    if (lower === "arial-italicmt") candidates.push("Arial\\tItalic");
+    if (lower === "arial-bolditalicmt") candidates.push("Arial\\tBold Italic");
+    if (lower === "arialmt") candidates.push("Arial\\t" + styleName);
+    if (lower.indexOf("arial") !== -1) candidates.push("Arial\\t" + styleName);
+    if (lower === "palatino-roman" || lower === "palatino linotype" || lower.indexOf("palatino") !== -1) {
+      candidates.push("Palatino\\t" + styleName);
+      candidates.push("Palatino\\tRegular");
+    }
+    if (lower === "timesnewromanpsmt" || lower === "times new roman" || lower.indexOf("times") !== -1) {
+      candidates.push("Times New Roman\\t" + styleName);
+      candidates.push("Times New Roman\\tRegular");
+    }
+    if (lower.indexOf("calibri") !== -1) candidates.push("Arial\\t" + styleName);
 
     if (fontName.indexOf("-") !== -1) {
       var parts = fontName.split("-");
@@ -96,7 +124,7 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
 
     if (styleDef.fontFamily) {
       try {
-        var resolvedFont = resolveFont(styleDef.fontFamily);
+        var resolvedFont = resolveFont(styleDef);
         if (resolvedFont) {
           target.appliedFont = resolvedFont.name;
         }

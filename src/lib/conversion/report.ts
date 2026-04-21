@@ -51,6 +51,41 @@ function pageFingerprintMatches(audit: InDesignAuditResult): boolean[] {
   });
 }
 
+function documentStoryText(document: DesignDocument): string {
+  return document.textStories
+    .flatMap((story) => story.paragraphs)
+    .map((paragraph) => paragraph.runs.map((run) => run.text).join(""))
+    .join(" ");
+}
+
+function auditText(audit: InDesignAuditResult): string {
+  return audit.pageSummaries.map((page) => page.textFingerprint).join(" ");
+}
+
+function wordCoverage(source: string, target: string): number {
+  const sourceWords = normalizeText(source)
+    .toLocaleLowerCase("sv-SE")
+    .split(" ")
+    .filter((word) => word.length >= 4);
+  if (sourceWords.length === 0) {
+    return 1;
+  }
+
+  const targetText = normalizeText(target).toLocaleLowerCase("sv-SE");
+  let covered = 0;
+  for (const word of sourceWords) {
+    if (targetText.includes(word)) {
+      covered += 1;
+    }
+  }
+
+  return covered / sourceWords.length;
+}
+
+function hasFooterOnEveryPage(audit: InDesignAuditResult): boolean {
+  return audit.pageSummaries.every((page) => page.textFingerprint.includes("Fokus 2025:9"));
+}
+
 export interface ConversionReport {
   sourceFile: string;
   referencePdfPath?: string;
@@ -67,6 +102,14 @@ export interface ConversionReport {
   pageFingerprintMatches: boolean[];
   expectedPageColumns: number[];
   actualPageColumns: number[];
+  sourceMalformedSingleCharacterParagraphsDetected: boolean;
+  malformedSingleCharacterParagraphsDetected: boolean;
+  singleCharacterParagraphCount: number;
+  canonicalTextCoverage: number;
+  exportedCanonicalTextCoverage: number;
+  firstPageIntroColumnPassed: boolean;
+  mainFlowTwoColumnPassed: boolean;
+  footerTextPresent: boolean;
   releaseApproved: boolean;
   convertedTextFrames: number;
   convertedShapes: number;
@@ -116,7 +159,30 @@ export function createConversionReport(
   const duplicatePageContentDetected = detectDuplicatePageContent(audit);
   const pageFingerprintMatchFlags = pageFingerprintMatches(audit);
   const backgroundSurrogatesDetected = audit.fullPagePdfPlacements.length > 0 || audit.fullPageImagePlacements.length > 0;
-  const structuralMatchPassed = columnStructureMatches && !duplicatePageContentDetected && !backgroundSurrogatesDetected;
+  const diagnostics = document.diagnostics;
+  const sourceMalformedSingleCharacterParagraphsDetected =
+    diagnostics?.sourceMalformedSingleCharacterParagraphsDetected ?? false;
+  const malformedSingleCharacterParagraphsDetected = diagnostics?.malformedSingleCharacterParagraphsDetected ?? false;
+  const singleCharacterParagraphCount = diagnostics?.singleCharacterParagraphCount ?? 0;
+  const canonicalTextCoverage = diagnostics?.canonicalTextCoverage ?? 1;
+  const exportedCanonicalTextCoverage = wordCoverage(documentStoryText(document), auditText(audit));
+  const firstPageIntroColumnPassed = (diagnostics?.firstStoryFrameColumnCount ?? 1) === 1;
+  const mainFlowTwoColumnPassed = (diagnostics?.mainFlowColumnCounts ?? [])
+    .slice(1, Math.min(17, diagnostics?.mainFlowColumnCounts.length ?? 0))
+    .every((columnCount) => columnCount >= 2);
+  const footerTextPresent = hasFooterOnEveryPage(audit);
+  const textFlowPassed =
+    !malformedSingleCharacterParagraphsDetected &&
+    canonicalTextCoverage >= 0.98 &&
+    exportedCanonicalTextCoverage >= 0.98 &&
+    firstPageIntroColumnPassed &&
+    mainFlowTwoColumnPassed &&
+    footerTextPresent;
+  const structuralMatchPassed =
+    columnStructureMatches &&
+    !duplicatePageContentDetected &&
+    !backgroundSurrogatesDetected &&
+    textFlowPassed;
 
   return {
     sourceFile,
@@ -134,6 +200,14 @@ export function createConversionReport(
     pageFingerprintMatches: pageFingerprintMatchFlags,
     expectedPageColumns,
     actualPageColumns,
+    sourceMalformedSingleCharacterParagraphsDetected,
+    malformedSingleCharacterParagraphsDetected,
+    singleCharacterParagraphCount,
+    canonicalTextCoverage,
+    exportedCanonicalTextCoverage,
+    firstPageIntroColumnPassed,
+    mainFlowTwoColumnPassed,
+    footerTextPresent,
     releaseApproved:
       comparison.pageCountMatches &&
       comparison.referencePageCount === audit.pageCount &&

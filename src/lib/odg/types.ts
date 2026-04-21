@@ -50,6 +50,7 @@ export interface DesignParagraph {
 export interface DesignTextFrame {
   kind: "textFrame";
   id: string;
+  role?: "story" | "footer" | "layout-placeholder";
   styleId?: string;
   xPt: number;
   yPt: number;
@@ -88,6 +89,10 @@ export interface DesignTextStory {
   id: string;
   fingerprint: string;
   paragraphs: DesignParagraph[];
+  sourceMalformedSingleCharacterParagraphsDetected?: boolean;
+  malformedSingleCharacterParagraphsDetected?: boolean;
+  singleCharacterParagraphCount?: number;
+  canonicalTextCoverage?: number;
 }
 
 export interface PageLayoutAnalysis {
@@ -110,4 +115,15 @@ export interface DesignDocument {
   characterStyles: DesignCharacterStyle[];
   graphicStyles: DesignGraphicStyle[];
   imageFills: DesignImageFill[];
+  diagnostics?: {
+    sourceMalformedSingleCharacterParagraphsDetected: boolean;
+    malformedSingleCharacterParagraphsDetected: boolean;
+    singleCharacterParagraphCount: number;
+    canonicalTextCoverage: number;
+    canonicalParagraphCount: number;
+    storyParagraphCount: number;
+    footerTextFrames: number;
+    firstStoryFrameColumnCount?: number;
+    mainFlowColumnCounts: number[];
+  };
 }

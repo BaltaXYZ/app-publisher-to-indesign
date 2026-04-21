@@ -7,6 +7,10 @@
 - [x] Quality report exposes structural match, native audit, and release gate status.
 - [x] Structural acceptance blocks repeated full-document page content.
 - [x] Structural acceptance blocks missing two-column page flow in the main story.
+- [x] Structural acceptance blocks malformed one-character paragraph flows.
+- [x] Structural acceptance blocks missing first-page one-column intro flow.
+- [x] Structural acceptance blocks missing native footer labels.
+- [x] UI/API only marks a job completed when the stricter text-flow, structure, font, footer, and native audit gates pass.
 
 ## Technical
 - [x] Parser strategy documented and initial OLE inspection implementation created.
@@ -14,6 +18,8 @@
 - [x] IDML export path implemented.
 - [x] Publisher raw parser implemented via `libmspub` (`pub2raw`).
 - [x] Main repeated story is exported as a threaded InDesign story instead of duplicated page-local content.
+- [x] Quill canonical story text repairs malformed `pub2raw` story tails while preserving `pub2raw` geometry.
+- [x] Font resolver maps `Palatino Linotype`, `Arial`, and `Times New Roman` to installed InDesign font variants.
 - [x] Temporary file retention and cleanup verified.
 - [x] Run and deploy documentation written.
 - [x] Acceptance CLI implemented for manifest-driven corpora.
@@ -27,4 +33,4 @@
 - [x] Adobe/InDesign document-open validation evidence captured.
 
 ## Current Release Call
-- Locally ready and verified against the current acceptance corpus with structural release gating. Public deployment remains blocked by runtime platform constraints.
+- Locally ready and verified against the current acceptance corpus with strict text-flow, structural, footer, font, and native-audit gating. Public deployment remains blocked by runtime platform constraints.

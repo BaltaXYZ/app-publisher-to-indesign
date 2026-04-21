@@ -11,6 +11,8 @@
 - Generated `IDML` artifact archived as evidence.
 - Quality report reviewed for exact, approximate, and unsupported mappings.
 - Adobe/InDesign open validation completed in the agreed target environment.
+- `Testfokus.pub` must not contain one-character paragraph sequences after `Konsekvenser...`.
+- `Testfokus.pub` must include the first-page one-column intro flow, two-column main flow, native footer labels, no overset text, and no font issues.
 
 ## Current Verified Evidence
 - `Testfokus.pub` is available as the first representative fixture.
@@ -19,6 +21,9 @@
 - The sample file converts to `IDML` through the local CLI pipeline.
 - The generated `IDML` has been reopened successfully in Adobe InDesign 2026.
 - The HTTP API flow has been exercised end-to-end with upload, polling, report, and result download.
+- `pnpm convert:pub Testfokus.pub` passes with `releaseApproved: true`, `malformedSingleCharacterParagraphsDetected: false`, `footerTextPresent: true`, `oversetText: false`, and no font issues.
+- `pnpm acceptance:run` passes `testfokus`.
+- A real local HTTP job for `Testfokus.pub` completes with `releaseApproved: true` and a downloadable `IDML`.
 
 ## Current Gaps
 - Public cloud deployment for the conversion runtime is unresolved.

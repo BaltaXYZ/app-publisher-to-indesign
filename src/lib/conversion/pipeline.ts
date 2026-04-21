@@ -79,6 +79,11 @@ export async function runConversionPipeline(
     const reasons = [
       !report.pageCountMatches ? "sidantalet matchar inte referensen" : null,
       !report.structuralMatchPassed ? "strukturell layoutmatchning misslyckades" : null,
+      report.malformedSingleCharacterParagraphsDetected ? "textflödet innehåller enbokstavsparagrafer" : null,
+      !report.firstPageIntroColumnPassed ? "förstasidans inledande enkolumnsflöde saknas" : null,
+      !report.mainFlowTwoColumnPassed ? "huvudflödet saknar tvåkolumnsstruktur" : null,
+      !report.footerTextPresent ? "sidfot saknas på en eller flera sidor" : null,
+      report.exportedCanonicalTextCoverage < 0.98 ? "kanonisk Publisher-text saknas i exporterad PDF" : null,
       !report.nativeAuditPassed ? "native-audit misslyckades" : null
     ].filter(Boolean);
 

@@ -93,6 +93,11 @@ function renderReport(report) {
   renderList(acceptanceList, [
     `Strukturell match: ${report.structuralMatchPassed ? "godkänd" : "underkänd"}`,
     `Kolumnstruktur: ${report.columnStructureMatches ? "godkänd" : "underkänd"}`,
+    `Förstasida enkolumnsintro: ${report.firstPageIntroColumnPassed ? "godkänd" : "underkänd"}`,
+    `Huvudflöde två kolumner: ${report.mainFlowTwoColumnPassed ? "godkänd" : "underkänd"}`,
+    `Textflöde: ${report.malformedSingleCharacterParagraphsDetected ? "enbokstavsfel upptäckt" : "godkänt"}`,
+    `Kanonisk text i PDF: ${Math.round((report.exportedCanonicalTextCoverage ?? 0) * 100)}%`,
+    `Sidfot: ${report.footerTextPresent ? "godkänd" : "saknas"}`,
     `Sidduplicering: ${report.duplicatePageContentDetected ? "upptäckt" : "ingen upptäckt"}`,
     `Native audit: ${report.nativeAuditPassed ? "godkänd" : "underkänd"}`,
     `Release gate: ${report.releaseApproved ? "godkänd" : "underkänd"}`,
