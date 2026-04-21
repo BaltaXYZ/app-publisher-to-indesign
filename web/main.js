@@ -133,10 +133,17 @@ function renderReport(report) {
     `Sidfot: ${report.footerPageAndUrlPresent ? "sidnummer och URL finns" : "saknas/inkomplett"}`,
     `Eftermaterial i huvudstory: ${report.misplacedBackMatterDetected ? "upptäckt" : "nej"}`,
     `Figur-textwrap: ${report.textWrapPassed ? "godkänd" : "underkänd"}`,
+    `Sidlandmärken: ${(report.pageLandmarkMatches ?? []).every(Boolean) ? "godkända" : "underkända"}`,
+    `Sektionssidor: ${report.sectionPageMatches ? "godkända" : "underkända"}`,
+    `Figur-/tabellrubriker: ${report.captionPresencePassed ? "godkända" : "saknas"}`,
+    `Native tabeller: ${report.tablePresencePassed ? "godkända" : "saknas"}`,
+    `Referenser vänsterjusterade: ${report.referenceAlignmentPassed ? "godkända" : "underkända"}`,
+    `Baksideszoner: ${report.backMatterZonesPassed ? "godkända" : "underkända"}`,
     `Sidduplicering: ${report.duplicatePageContentDetected ? "upptäckt" : "ingen upptäckt"}`,
     `Native audit: ${report.nativeAuditPassed ? "godkänd" : "underkänd"}`,
     `Release gate: ${report.releaseApproved ? "godkänd" : "underkänd"}`,
-    `Visuell diff: ${report.visualMatchPassed ? "godkänd" : "underkänd"}`
+    `Fonttolerant visuell diff: ${report.fontTolerantVisualMatchPassed ? "godkänd" : "underkänd"}`,
+    `Exakt pixeldiff: ${report.exactVisualMatchPassed ? "godkänd" : "förväntat avvikande vid fontskillnader"}`
   ]);
 
   renderList(qualityList, [
@@ -149,6 +156,7 @@ function renderReport(report) {
     `Saknade länkar: ${report.missingLinks.length}`,
     `Fontproblem: ${report.fontIssues.length}`,
     `Bakgrundssurrogat: ${report.backgroundSurrogatesDetected ? "ja" : "nej"}`,
+    `Rå pixelavvikelse: ${Math.round((report.rawPixelMismatchRatio ?? 0) * 1000) / 10}%`,
     `Referens-PDF: ${report.referencePdfSource ?? "okänd"}`
   ]);
 

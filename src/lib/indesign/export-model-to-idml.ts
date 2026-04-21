@@ -204,6 +204,21 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
     }
   }
 
+  function expandFrameIfOverset(textFrame, pageHeight) {
+    try {
+      var guard = 0;
+      while ((textFrame.overflows || textFrame.parentStory.overflows) && guard < 8) {
+        var bounds = textFrame.geometricBounds;
+        bounds[2] = Math.min(pageHeight - 20, bounds[2] + 36);
+        textFrame.geometricBounds = bounds;
+        guard += 1;
+        if (bounds[2] >= pageHeight - 20) {
+          break;
+        }
+      }
+    } catch (error) {}
+  }
+
   var model = ${modelLiteral};
   var assetMap = ${assetMapLiteral};
   var idmlFile = new File("${escapedIdmlPath}");
@@ -277,6 +292,13 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
             applyCharacterFormatting(textFrame.parentStory.characters.everyItem(), inlineParagraphs[0].runs[0], doc);
           }
           applyTextStyles(textFrame.parentStory, inlineParagraphs, doc);
+          if (item.role === "table") {
+            try {
+              var table = textFrame.parentStory.texts[0].convertToTable("\\t", "\\r");
+              table.rows.everyItem().minimumHeight = 10;
+            } catch (error) {}
+          }
+          expandFrameIfOverset(textFrame, model.pageHeightPt);
         }
       } else {
         var rect = page.rectangles.add();

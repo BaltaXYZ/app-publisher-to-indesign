@@ -33,7 +33,20 @@ export async function exportIdmlToPdfAndAudit(idmlPath: string, outputPdfPath: s
 
 (function () {
   function jsonString(value) {
-    return '"' + String(value).replace(/\\\\/g, "\\\\\\\\").replace(/"/g, '\\\\"') + '"';
+    var input = String(value);
+    var output = "";
+    for (var i = 0; i < input.length; i += 1) {
+      var code = input.charCodeAt(i);
+      var ch = input.charAt(i);
+      if (ch === "\\\\") output += "\\\\\\\\";
+      else if (ch === '"') output += '\\\\"';
+      else if (code === 13) output += "\\\\r";
+      else if (code === 10) output += "\\\\n";
+      else if (code === 9) output += "\\\\t";
+      else if (code < 32) output += " ";
+      else output += ch;
+    }
+    return '"' + output + '"';
   }
 
   function jsonArray(values) {

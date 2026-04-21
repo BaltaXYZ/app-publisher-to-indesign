@@ -50,7 +50,18 @@ export interface DesignParagraph {
 export interface DesignTextFrame {
   kind: "textFrame";
   id: string;
-  role?: "story" | "cover-title" | "cover-abstract" | "footer" | "back-matter" | "layout-placeholder";
+  role?:
+    | "story"
+    | "article"
+    | "cover-title"
+    | "cover-abstract"
+    | "issue-label"
+    | "caption"
+    | "table"
+    | "reference"
+    | "footer"
+    | "back-matter"
+    | "layout-placeholder";
   styleId?: string;
   xPt: number;
   yPt: number;
@@ -134,5 +145,12 @@ export interface DesignDocument {
     misplacedBackMatterDetected: boolean;
     textWrapPassed: boolean;
     textWrapShapeCount: number;
+    pageLandmarkMatches?: boolean[];
+    sectionPageMatches?: boolean;
+    captionPresencePassed?: boolean;
+    tablePresencePassed?: boolean;
+    referenceAlignmentPassed?: boolean;
+    backMatterZonesPassed?: boolean;
+    referenceAnchoredLayoutApplied?: boolean;
   };
 }

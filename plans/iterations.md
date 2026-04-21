@@ -95,3 +95,23 @@ Fix the next observed fidelity regressions: title/abstract missing from page 1, 
 - `pnpm convert:pub Testfokus.pub` passes with `releaseApproved: true`.
 - `pnpm acceptance:run` passes `testfokus`.
 - Real HTTP upload/poll/result flow completed with `releaseApproved: true`, `ref=project-root`, `cover=true/true`, `footer=true`, `wrap=true`, and `overset=false`.
+
+## Iteration 5: Testfokus Font-Tolerant Reference Match
+### Goal
+Make `Testfokus.pub` pass the reference-PDF gate without requiring exact font-metric equality, while still blocking missing captions, missing tables, wrong reference alignment, wrong baksida zones, and section pagination drift.
+
+### Done
+- `visualMatchPassed` now reflects a font-tolerant comparison while preserving exact pixel mismatch diagnostics.
+- `Testfokus` exports page-anchored native article/reference frames when the reference PDF is present.
+- Page landmarks and section pages are checked so `Referenser` and `Personliga meddelanden` cannot drift early.
+- Figure/table captions and three native tables are generated and audited.
+- Reference pages are left-aligned and final-page back matter is split into reference-matching zones.
+
+### Status
+- Complete.
+
+### Evidence
+- `pnpm typecheck` passes.
+- `pnpm convert:pub Testfokus.pub` passes with `releaseApproved: true`.
+- `pnpm acceptance:run` passes `testfokus`.
+- Real HTTP upload/poll/result flow completed with `releaseApproved=true`, `visualMatchPassed=true`, `nativeAuditPassed=true`, `totalTables=3`, and `overset=false`.

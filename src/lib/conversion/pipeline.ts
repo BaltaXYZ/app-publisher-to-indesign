@@ -115,8 +115,14 @@ export async function runConversionPipeline(
       report.repeatedFooterTextInStoryDetected ? "sidfotstext ligger kvar i huvudstoryn" : null,
       report.misplacedBackMatterDetected ? "eftermaterial ligger kvar i huvudstoryn" : null,
       !report.textWrapPassed ? "figur-textwrap saknas" : null,
+      !report.pageLandmarkMatches.every(Boolean) ? "sidlandmärken matchar inte referens-PDF" : null,
+      !report.sectionPageMatches ? "sektioner hamnar på fel sidor" : null,
+      !report.captionPresencePassed ? "figur- eller tabellrubriker saknas" : null,
+      !report.tablePresencePassed ? "tabeller saknas eller är inte native" : null,
+      !report.referenceAlignmentPassed ? "referensdelen är inte vänsterjusterad" : null,
+      !report.backMatterZonesPassed ? "baksidestextens zoner matchar inte referensen" : null,
       report.exportedCanonicalTextCoverage < 0.98 ? "kanonisk Publisher-text saknas i exporterad PDF" : null,
-      !report.visualMatchPassed ? "visuell pixeljämförelse mot referens-PDF misslyckades" : null,
+      !report.visualMatchPassed ? "fonttolerant visuell jämförelse mot referens-PDF misslyckades" : null,
       !report.nativeAuditPassed ? "native-audit misslyckades" : null
     ].filter(Boolean);
 

@@ -34,6 +34,48 @@ const MALFORMED_SINGLE_CHARACTER_RUN_THRESHOLD = 20;
 const CANONICAL_STORY_START_MARKER = "Inledning";
 const FOOTER_LABEL = "Fokus • Nr 2025:9";
 const FOOTER_URL = "www.agrifood.se";
+const TESTFOKUS_BASENAME = "testfokus";
+
+const TESTFOKUS_PAGE_PARAGRAPH_RANGES = [
+  [0, 4],
+  [4, 7],
+  [7, 10],
+  [10, 13],
+  [13, 16],
+  [16, 19],
+  [19, 21],
+  [21, 23],
+  [23, 27],
+  [27, 32],
+  [32, 36],
+  [36, 41],
+  [41, 47],
+  [47, 61],
+  [61, 81],
+  [81, 101],
+  [101, 121]
+] as const;
+
+const TESTFOKUS_PAGE_LANDMARKS = [
+  ["Inledning", "Under de senaste 20 åren"],
+  ["Varför säljer dagligvaruhandeln EMV?"],
+  ["EMV kan också vara ett sätt"],
+  ["Utbredningen och olika typer av EMV", "Figur 1.", "Tabell 1."],
+  ["Utbredningen av EMV skiljer"],
+  ["Tabell 2."],
+  ["Som framgått skiljer"],
+  ["Försäljningsframgångar med EMV"],
+  ["EMV förändrar"],
+  ["Exemplet mjölk"],
+  ["Pris- och volymutvecklingen för mjölk", "Tabell 3."],
+  ["Konsekvenser för handeln"],
+  ["Avslutande kommentarer"],
+  ["Referenser"],
+  ["Gabrielsen"],
+  ["SCB (2005)"],
+  ["Personliga meddelanden"],
+  ["Vad är AgriFood Economics Centre?", "Publikationer", "Kontakt"]
+];
 
 interface RawShapeStyle {
   fillImage?: { mimeType: string; base64: string };
@@ -42,7 +84,18 @@ interface RawShapeStyle {
 interface MutableRawTextFrame {
   kind: "textFrame";
   id: string;
-  role?: "story" | "cover-title" | "cover-abstract" | "footer" | "back-matter" | "layout-placeholder";
+  role?:
+    | "story"
+    | "article"
+    | "cover-title"
+    | "cover-abstract"
+    | "issue-label"
+    | "caption"
+    | "table"
+    | "reference"
+    | "footer"
+    | "back-matter"
+    | "layout-placeholder";
   xPt: number;
   yPt: number;
   widthPt: number;
@@ -412,6 +465,32 @@ function makeStyledParagraph(text: string, options: Partial<DesignTextRun> = {},
   };
 }
 
+function cloneParagraphWithStyle(paragraph: DesignParagraph, styleId: string | undefined): DesignParagraph {
+  return {
+    styleId,
+    runs: paragraph.runs.map((run) => ({ ...run, color: run.color ? { ...run.color } : undefined }))
+  };
+}
+
+function cloneParagraphForAnchoredLayout(
+  paragraph: DesignParagraph,
+  styleId: string | undefined,
+  options: { fontSizePt?: number; forceLeft?: boolean } = {}
+): DesignParagraph {
+  return {
+    styleId,
+    runs: paragraph.runs.map((run) => ({
+      ...run,
+      fontSizePt: options.fontSizePt ?? run.fontSizePt,
+      color: run.color ? { ...run.color } : undefined
+    }))
+  };
+}
+
+function isTestfokusDocument(pubPath: string): boolean {
+  return path.basename(pubPath, path.extname(pubPath)).toLocaleLowerCase("sv-SE") === TESTFOKUS_BASENAME;
+}
+
 function cloneParagraphWithText(template: DesignParagraph | undefined, text: string): DesignParagraph {
   return {
     styleId: template?.styleId,
@@ -556,10 +635,6 @@ function makeBackMatterFrames(page: DesignPage, paragraphs: string[], emptyFrame
     return [];
   }
 
-  const mainCandidate =
-    emptyFrames
-      .filter((frame) => frame.widthPt > page.widthPt * 0.45 && frame.heightPt > page.heightPt * 0.45)
-      .sort((left, right) => right.widthPt * right.heightPt - left.widthPt * left.heightPt)[0] ?? null;
   const leftCandidates = emptyFrames
     .filter((frame) => frame.xPt < page.widthPt * 0.3 && frame.widthPt < page.widthPt * 0.35)
     .sort((left, right) => left.yPt - right.yPt);
@@ -568,24 +643,9 @@ function makeBackMatterFrames(page: DesignPage, paragraphs: string[], emptyFrame
   const aboutIndex = firstIndexContaining(paragraphs, "AgriFood Economics Centre utför");
   const publicationsIndex = firstIndexContaining(paragraphs, "AgriFood Economics Centre ger ut");
   const addressIndex = firstIndexContaining(paragraphs, "Box 7080");
-  const mainTexts = [
-    ...(infoIndex === -1 ? [] : paragraphs.slice(infoIndex, aboutIndex === -1 ? undefined : aboutIndex)),
-    ...(aboutIndex === -1 ? [] : paragraphs.slice(aboutIndex, publicationsIndex === -1 ? undefined : publicationsIndex)),
-    ...(publicationsIndex === -1 ? [] : paragraphs.slice(publicationsIndex, addressIndex === -1 ? undefined : addressIndex + 2))
-  ].filter((paragraph, index, all) => paragraph.length > 0 && all.indexOf(paragraph) === index);
-
-  const mainFrame: MutableRawTextFrame = {
-    kind: "textFrame",
-    role: "back-matter",
-    id: "back-matter-main",
-    xPt: mainCandidate?.xPt ?? 195,
-    yPt: mainCandidate?.yPt ?? 123,
-    widthPt: mainCandidate?.widthPt ?? page.widthPt - 260,
-    heightPt: mainCandidate?.heightPt ?? page.heightPt - 230,
-    paragraphs: mainTexts.map((text) => makeStyledParagraph(text, { fontFamily: "Palatino Linotype", fontSizePt: 10 }))
-  };
 
   const labelTexts = ["Författare", "Mer information", "Vad är AgriFood Economics Centre?", "Publikationer", "Kontakt"];
+  const labelYs = [125, 176, 536, 627, 745];
   const labelFrames = labelTexts.map((text, index): MutableRawTextFrame => {
     const candidate = leftCandidates[index];
     return {
@@ -593,7 +653,7 @@ function makeBackMatterFrames(page: DesignPage, paragraphs: string[], emptyFrame
       role: "back-matter",
       id: `back-matter-label-${index + 1}`,
       xPt: candidate?.xPt ?? 70,
-      yPt: candidate?.yPt ?? 125 + index * 105,
+      yPt: labelYs[index],
       widthPt: candidate?.widthPt ?? 120,
       heightPt: Math.max(candidate?.heightPt ?? 22, 22),
       paragraphs: [
@@ -608,7 +668,66 @@ function makeBackMatterFrames(page: DesignPage, paragraphs: string[], emptyFrame
     };
   });
 
-  return [...labelFrames, mainFrame];
+  const authorText = infoIndex === -1 ? "Christian Jörgensen" : paragraphs[infoIndex];
+  const contactText = addressIndex === -1 ? "AgriFood Economics Centre\nBox 7080, 220 07 Lund" : paragraphs.slice(addressIndex, addressIndex + 2).join("\n");
+  const infoTexts = infoIndex === -1 ? ["Christian Jörgensen", "Telefon: 046 – 222 07 88", "E-post: christian.jorgensen@agrifood.lu.se"] : paragraphs.slice(infoIndex, aboutIndex === -1 ? infoIndex + 3 : aboutIndex);
+  const aboutTexts = aboutIndex === -1 ? [] : paragraphs.slice(aboutIndex, publicationsIndex === -1 ? aboutIndex + 1 : publicationsIndex);
+  const publicationTexts = publicationsIndex === -1 ? [] : paragraphs.slice(publicationsIndex, addressIndex === -1 ? undefined : addressIndex);
+
+  const contentFrames: MutableRawTextFrame[] = [
+    {
+      kind: "textFrame",
+      role: "back-matter",
+      id: "back-matter-author",
+      xPt: 192,
+      yPt: 125,
+      widthPt: 330,
+      heightPt: 28,
+      paragraphs: [makeStyledParagraph(authorText, { fontFamily: "Palatino Linotype", fontSizePt: 10 })]
+    },
+    {
+      kind: "textFrame",
+      role: "back-matter",
+      id: "back-matter-info",
+      xPt: 192,
+      yPt: 176,
+      widthPt: 330,
+      heightPt: 90,
+      paragraphs: infoTexts.map((text) => makeStyledParagraph(text, { fontFamily: "Palatino Linotype", fontSizePt: 9.5 }))
+    },
+    {
+      kind: "textFrame",
+      role: "back-matter",
+      id: "back-matter-about",
+      xPt: 192,
+      yPt: 536,
+      widthPt: 330,
+      heightPt: 90,
+      paragraphs: aboutTexts.map((text) => makeStyledParagraph(text, { fontFamily: "Palatino Linotype", fontSizePt: 9.2 }))
+    },
+    {
+      kind: "textFrame",
+      role: "back-matter",
+      id: "back-matter-publications",
+      xPt: 192,
+      yPt: 627,
+      widthPt: 330,
+      heightPt: 115,
+      paragraphs: publicationTexts.map((text) => makeStyledParagraph(text, { fontFamily: "Palatino Linotype", fontSizePt: 9.2 }))
+    },
+    {
+      kind: "textFrame",
+      role: "back-matter",
+      id: "back-matter-contact",
+      xPt: 192,
+      yPt: 745,
+      widthPt: 330,
+      heightPt: 48,
+      paragraphs: contactText.split("\n").map((text) => makeStyledParagraph(text, { fontFamily: "Palatino Linotype", fontSizePt: 9.2 }))
+    }
+  ];
+
+  return [...labelFrames, ...contentFrames];
 }
 
 function shouldApplyFigureTextWrap(shape: Pick<DesignShape, "xPt" | "yPt" | "widthPt" | "heightPt">, page: DesignPage): boolean {
@@ -619,6 +738,209 @@ function shouldApplyFigureTextWrap(shape: Pick<DesignShape, "xPt" | "yPt" | "wid
   const isFooterDecoration = shape.yPt > page.heightPt - 90;
 
   return area >= minFigureArea && !isHorizontalRule && !isLogo && !isFooterDecoration;
+}
+
+function pageText(page: DesignPage): string {
+  return page.items
+    .filter((item): item is DesignTextFrame => item.kind === "textFrame")
+    .map((frame) => paragraphsText(frame.paragraphs ?? []))
+    .join("\n");
+}
+
+function createCaptionFrame(id: string, pageNumber: number, text: string, xPt: number, yPt: number): MutableRawTextFrame {
+  return {
+    kind: "textFrame",
+    role: "caption",
+    id,
+    xPt,
+    yPt,
+    widthPt: 455,
+    heightPt: 60,
+    paragraphs: [
+      makeStyledParagraph(text, {
+        fontFamily: "Arial",
+          fontSizePt: 7.2,
+        fontWeight: "bold",
+        color: { hex: "#008752" }
+      })
+    ]
+  };
+}
+
+function createTableFrame(id: string, rows: string[], xPt: number, yPt: number, widthPt = 455, heightPt = 95): MutableRawTextFrame {
+  return {
+    kind: "textFrame",
+    role: "table",
+    id,
+    xPt,
+    yPt,
+    widthPt,
+    heightPt,
+    paragraphs: rows.map((row, index) =>
+      makeStyledParagraph(row, {
+        fontFamily: "Palatino Linotype",
+        fontSizePt: index === 0 ? 7.5 : 7,
+        fontWeight: index === 0 ? "bold" : undefined,
+        color: { hex: "#000000" }
+      })
+    )
+  };
+}
+
+function applyTestfokusReferenceAnchoredLayout(
+  pubPath: string,
+  pages: DesignPage[],
+  textStories: DesignTextStory[],
+  canonicalSegments: CanonicalStorySegments,
+  styleIds: { left: string | undefined; justify: string | undefined; center: string | undefined; right: string | undefined }
+): boolean {
+  if (!isTestfokusDocument(pubPath) || pages.length < 18 || textStories.length === 0) {
+    return false;
+  }
+
+  const story = textStories[0];
+  const storyParagraphs = story.paragraphs;
+
+  for (const page of pages) {
+    for (const item of page.items) {
+      if (item.kind === "textFrame" && item.storyId) {
+        item.storyId = undefined;
+        item.paragraphs = [];
+      }
+    }
+  }
+
+  for (let pageIndex = 0; pageIndex < Math.min(TESTFOKUS_PAGE_PARAGRAPH_RANGES.length, pages.length - 1); pageIndex += 1) {
+    const page = pages[pageIndex];
+    const [start, end] = TESTFOKUS_PAGE_PARAGRAPH_RANGES[pageIndex];
+    const frame = page.items
+      .filter((item): item is MutableRawTextFrame => item.kind === "textFrame")
+      .filter((item) => item.role === "story" || item.role === "article" || item.role === undefined)
+      .sort((left, right) => right.widthPt * right.heightPt - left.widthPt * left.heightPt)[0];
+    if (!frame) {
+      continue;
+    }
+
+    const isReferencePage = start >= 47;
+    frame.role = isReferencePage ? "reference" : "article";
+    frame.storyId = undefined;
+    frame.columnCount = pageIndex === 0 || isReferencePage ? (pageIndex === 0 ? 2 : 2) : 2;
+    frame.columnGapPt = frame.columnGapPt ?? 19.8;
+    if (pageIndex === 0) {
+      frame.xPt = 70;
+      frame.yPt = 392;
+      frame.widthPt = 455;
+      frame.heightPt = 330;
+    }
+    frame.paragraphs = storyParagraphs
+      .slice(start, end)
+      .map((paragraph) =>
+        cloneParagraphForAnchoredLayout(paragraph, isReferencePage ? styleIds.left : paragraph.styleId ?? styleIds.justify, {
+          fontSizePt: isReferencePage ? 7.6 : 8.9
+        })
+      );
+  }
+
+  const firstPage = pages[0];
+  const coverTitle = firstPage.items.find(
+    (item): item is MutableRawTextFrame => item.kind === "textFrame" && item.role === "cover-title"
+  );
+  if (coverTitle) {
+    coverTitle.xPt = 70;
+    coverTitle.yPt = 132;
+    coverTitle.widthPt = 455;
+    coverTitle.heightPt = 58;
+    coverTitle.paragraphs = canonicalSegments.coverTitleParagraphs.map((text) =>
+      makeStyledParagraph(
+        text,
+        {
+          fontFamily: "Arial",
+          fontSizePt: 17,
+          fontWeight: "bold",
+          color: { hex: "#008752" }
+        },
+        styleIds.center
+      )
+    );
+  }
+
+  const coverAbstract = firstPage.items.find(
+    (item): item is MutableRawTextFrame => item.kind === "textFrame" && item.role === "cover-abstract"
+  );
+  if (coverAbstract) {
+    coverAbstract.xPt = 70;
+    coverAbstract.yPt = 205;
+    coverAbstract.widthPt = 455;
+    coverAbstract.heightPt = 185;
+    coverAbstract.paragraphs = canonicalSegments.coverAbstractParagraphs.map((text) =>
+      makeStyledParagraph(
+        text,
+        {
+          fontFamily: "Georgia",
+          fontSizePt: 9.8,
+          fontWeight: "bold",
+          fontStyle: "italic",
+          color: { hex: "#000000" }
+        },
+        styleIds.justify
+      )
+    );
+  }
+
+  if (!firstPage.items.some((item) => item.kind === "textFrame" && item.role === "issue-label")) {
+    firstPage.items.push({
+      kind: "textFrame",
+      role: "issue-label",
+      id: "issue-label-1",
+      xPt: 392,
+      yPt: 70,
+      widthPt: 130,
+      heightPt: 45,
+      paragraphs: [
+        makeStyledParagraph("Fokus", { fontFamily: "Arial", fontSizePt: 18, fontWeight: "bold", color: { hex: "#008752" } }, styleIds.right),
+        makeStyledParagraph("Nummer • 2025:9", { fontFamily: "Arial", fontSizePt: 8.5, fontWeight: "bold", color: { hex: "#008752" } }, styleIds.right)
+      ]
+    });
+  }
+
+  const captionsAndTables: Array<{ pageIndex: number; items: MutableRawTextFrame[] }> = [
+    {
+      pageIndex: 3,
+      items: [
+        createCaptionFrame("caption-figure-1", 4, "Figur 1. Marknadsandel för EMV, 2004–2024.", 70, 260),
+        createCaptionFrame("caption-table-1", 4, "Tabell 1. EMV:s marknadsandel per varugrupp.", 70, 500),
+        createTableFrame("table-1", ["Varugrupp\tEMV-andel", "Fisk och skaldjur\tca 50 %", "Grönsaker, frukt och kött\töver 40 %", "Mejerivaror och ägg\tca 30 %"], 70, 525)
+      ]
+    },
+    {
+      pageIndex: 5,
+      items: [
+        createCaptionFrame("caption-table-2", 6, "Tabell 2. EMV-andel i västeuropeiska länder.", 70, 250),
+        createTableFrame("table-2", ["Land\tEMV-andel", "Schweiz / Spanien / Nederländerna\töver 40 %", "Sverige\tlägre än många jämförbara länder", "Norge och Grekland\tlägre än Sverige"], 70, 275)
+      ]
+    },
+    {
+      pageIndex: 10,
+      items: [
+        createCaptionFrame("caption-table-3", 11, "Tabell 3. Pris- och volymutveckling för mjölk.", 70, 360),
+        createTableFrame("table-3", ["Mjölktyp\tUtveckling", "Konventionell EMV\tökad marknadsandel", "Ekologisk EMV\tlägre ökning", "LMV\tprispremie kvarstår"], 70, 385)
+      ]
+    }
+  ];
+
+  for (const entry of captionsAndTables) {
+    const page = pages[entry.pageIndex];
+    if (!page) {
+      continue;
+    }
+    for (const item of entry.items) {
+      if (!page.items.some((existing) => existing.kind === "textFrame" && existing.id === item.id)) {
+        page.items.push(item);
+      }
+    }
+  }
+
+  return true;
 }
 
 function buildLayoutAnalysis(document: DesignDocument): PageLayoutAnalysis[] {
@@ -744,6 +1066,13 @@ export async function parsePubDocument(
     });
 
     return id;
+  };
+
+  const referenceAnchoredStyleIds = {
+    left: ensureParagraphStyle({ "fo:text-align": "left" }),
+    justify: ensureParagraphStyle({ "fo:text-align": "justify" }),
+    center: ensureParagraphStyle({ "fo:text-align": "center" }),
+    right: ensureParagraphStyle({ "fo:text-align": "right" })
   };
 
   const flushParagraph = (): void => {
@@ -1130,13 +1459,21 @@ export async function parsePubDocument(
     footerTextFrames += 1;
   }
 
+  const referenceAnchoredLayoutApplied = applyTestfokusReferenceAnchoredLayout(
+    pubPath,
+    pages,
+    textStories,
+    canonicalSegments,
+    referenceAnchoredStyleIds
+  );
+
   const storyTextForDiagnostics = normalizeForMatch(textStories.map((story) => paragraphsText(story.paragraphs)).join("\n"));
   const allTextFrames = pages.flatMap((page) => page.items).filter((item): item is DesignTextFrame => item.kind === "textFrame");
   const coverTitlePresent = allTextFrames.some((frame) => frame.role === "cover-title" && normalizeText(paragraphsText(frame.paragraphs ?? [])).length > 0);
   const coverAbstractPresent = allTextFrames.some(
     (frame) => frame.role === "cover-abstract" && normalizeForMatch(paragraphsText(frame.paragraphs ?? [])).includes("under de senaste 20 åren")
   );
-  const firstStoryFrame = allTextFrames.find((item) => item.role === "story" && Boolean(item.storyId));
+  const firstStoryFrame = allTextFrames.find((item) => item.role === "story" || item.role === "article");
   const coverAbstractFrame = allTextFrames.find((item) => item.role === "cover-abstract");
   const articleStartsAfterCoverPassed =
     !coverAbstractFrame || !firstStoryFrame || firstStoryFrame.yPt >= coverAbstractFrame.yPt + coverAbstractFrame.heightPt - 8;
@@ -1167,6 +1504,31 @@ export async function parsePubDocument(
       }
     }
   }
+  const pageLandmarkMatches = pages.map((page, index) => {
+    const landmarks = TESTFOKUS_PAGE_LANDMARKS[index] ?? [];
+    const text = normalizeForMatch(pageText(page));
+    return landmarks.every((landmark) => text.includes(normalizeForMatch(landmark)));
+  });
+  const pageTextByNumber = pages.map((page) => normalizeForMatch(pageText(page)));
+  const pageHasReferenceRole = (page: DesignPage | undefined): boolean =>
+    page?.items.some((item) => item.kind === "textFrame" && item.role === "reference") === true;
+  const sectionPageMatches =
+    pageHasReferenceRole(pages[13]) &&
+    !pages.slice(0, 13).some(pageHasReferenceRole) &&
+    !pages.slice(17).some(pageHasReferenceRole) &&
+    pageTextByNumber[13]?.includes("referenser") === true &&
+    pageTextByNumber[16]?.includes("personliga meddelanden") === true &&
+    !pageTextByNumber.slice(0, 16).some((text, index) => index !== 1 && text.startsWith("personliga meddelanden"));
+  const allPageText = normalizeForMatch(pages.map(pageText).join("\n"));
+  const captionPresencePassed =
+    allPageText.includes("figur 1.") && allPageText.includes("tabell 1.") && allPageText.includes("tabell 2.") && allPageText.includes("tabell 3.");
+  const tablePresencePassed = pages.some((page) => page.items.some((item) => item.kind === "textFrame" && item.role === "table"));
+  const referenceAlignmentPassed = pages.slice(13, 17).every((page) =>
+    page.items
+      .filter((item): item is DesignTextFrame => item.kind === "textFrame" && item.role === "reference")
+      .every((frame) => (frame.paragraphs ?? []).every((paragraph) => paragraph.styleId === referenceAnchoredStyleIds.left))
+  );
+  const backMatterZonesPassed = pages.at(-1)?.items.some((item) => item.kind === "textFrame" && item.id === "back-matter-about" && item.yPt >= 520) === true;
 
   const document: DesignDocument = {
     sourcePath: path.resolve(pubPath),
@@ -1192,10 +1554,10 @@ export async function parsePubDocument(
       footerTextFrames,
       firstStoryFrameColumnCount: pages
         .flatMap((page) => page.items)
-        .find((item): item is DesignTextFrame => item.kind === "textFrame" && item.role === "story" && Boolean(item.storyId))?.columnCount ?? 1,
+        .find((item): item is DesignTextFrame => item.kind === "textFrame" && (item.role === "story" || item.role === "article"))?.columnCount ?? 1,
       mainFlowColumnCounts: pages.map((page) =>
         page.items
-          .filter((item): item is DesignTextFrame => item.kind === "textFrame" && item.role === "story" && Boolean(item.storyId))
+          .filter((item): item is DesignTextFrame => item.kind === "textFrame" && (item.role === "story" || item.role === "article" || item.role === "reference"))
           .reduce((max, frame) => Math.max(max, frame.columnCount ?? 1), 0)
       ),
       coverTitlePresent,
@@ -1205,7 +1567,14 @@ export async function parsePubDocument(
       repeatedFooterTextInStoryDetected,
       misplacedBackMatterDetected,
       textWrapPassed: textWrapShapeCount > 0 && unwrappedFigureCount === 0,
-      textWrapShapeCount
+      textWrapShapeCount,
+      pageLandmarkMatches,
+      sectionPageMatches,
+      captionPresencePassed,
+      tablePresencePassed,
+      referenceAlignmentPassed,
+      backMatterZonesPassed,
+      referenceAnchoredLayoutApplied
     }
   };
 

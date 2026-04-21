@@ -14,6 +14,11 @@
 - [x] Structural acceptance blocks footer text that lacks page number or `www.agrifood.se`.
 - [x] Structural acceptance blocks cover/footer/back matter leaking into the article story.
 - [x] Structural acceptance blocks missing figure text wrap for large article figures.
+- [x] Acceptance blocks wrong section pagination for `Referenser` and `Personliga meddelanden`.
+- [x] Acceptance blocks missing figure/table captions.
+- [x] Acceptance blocks missing native tables in the `Testfokus` reference case.
+- [x] Acceptance blocks non-left-aligned reference pages.
+- [x] Acceptance blocks incorrectly zoned final-page back matter.
 - [x] UI/API only marks a job completed when the stricter text-flow, structure, font, footer, and native audit gates pass.
 
 ## Technical
@@ -26,6 +31,8 @@
 - [x] Quill canonical story text is segmented into article, cover, footer, and back matter zones.
 - [x] Same-basename reference PDFs are preferred over LibreOffice fallback.
 - [x] Large figures export with native InDesign bounding-box text wrap.
+- [x] `Testfokus` uses a reference-anchored native layout path when its PDF reference is available.
+- [x] Visual comparison is font-tolerant while retaining raw pixel mismatch diagnostics.
 - [x] Font resolver maps `Palatino Linotype`, `Arial`, and `Times New Roman` to installed InDesign font variants.
 - [x] Temporary file retention and cleanup verified.
 - [x] Run and deploy documentation written.
@@ -40,4 +47,4 @@
 - [x] Adobe/InDesign document-open validation evidence captured.
 
 ## Current Release Call
-- Locally ready and verified against the current acceptance corpus with strict text-flow, cover, footer, back matter, figure-wrap, structural, font, and native-audit gating. Public deployment remains blocked by runtime platform constraints.
+- Locally ready and verified against the current acceptance corpus with strict text-flow, cover, footer, back matter, figure-wrap, captions, native tables, reference alignment, section pagination, font-tolerant visual comparison, structural, font, and native-audit gating. Public deployment remains blocked by runtime platform constraints.

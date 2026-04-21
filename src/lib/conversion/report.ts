@@ -102,7 +102,10 @@ export interface ConversionReport {
   pageCount: number;
   pageCountMatches: boolean;
   visualMatchPassed: boolean;
+  exactVisualMatchPassed: boolean;
+  fontTolerantVisualMatchPassed: boolean;
   visualDiffThreshold: number;
+  rawPixelMismatchRatio: number;
   nativeAuditPassed: boolean;
   structuralMatchPassed: boolean;
   columnStructureMatches: boolean;
@@ -126,6 +129,12 @@ export interface ConversionReport {
   repeatedFooterTextInStoryDetected: boolean;
   misplacedBackMatterDetected: boolean;
   textWrapPassed: boolean;
+  pageLandmarkMatches: boolean[];
+  sectionPageMatches: boolean;
+  captionPresencePassed: boolean;
+  tablePresencePassed: boolean;
+  referenceAlignmentPassed: boolean;
+  backMatterZonesPassed: boolean;
   releaseApproved: boolean;
   convertedTextFrames: number;
   convertedShapes: number;
@@ -197,6 +206,12 @@ export function createConversionReport(
   const repeatedFooterTextInStoryDetected = diagnostics?.repeatedFooterTextInStoryDetected ?? false;
   const misplacedBackMatterDetected = diagnostics?.misplacedBackMatterDetected ?? false;
   const textWrapPassed = diagnostics?.textWrapPassed ?? false;
+  const pageLandmarkMatches = diagnostics?.pageLandmarkMatches ?? [];
+  const sectionPageMatches = diagnostics?.sectionPageMatches ?? true;
+  const captionPresencePassed = diagnostics?.captionPresencePassed ?? true;
+  const tablePresencePassed = diagnostics?.tablePresencePassed === true ? audit.totalTables > 0 : diagnostics?.tablePresencePassed ?? true;
+  const referenceAlignmentPassed = diagnostics?.referenceAlignmentPassed ?? true;
+  const backMatterZonesPassed = diagnostics?.backMatterZonesPassed ?? true;
   const textFlowPassed =
     !malformedSingleCharacterParagraphsDetected &&
     canonicalTextCoverage >= 0.98 &&
@@ -210,7 +225,13 @@ export function createConversionReport(
     footerPageAndUrlPresent &&
     !repeatedFooterTextInStoryDetected &&
     !misplacedBackMatterDetected &&
-    textWrapPassed;
+    textWrapPassed &&
+    pageLandmarkMatches.every(Boolean) &&
+    sectionPageMatches &&
+    captionPresencePassed &&
+    tablePresencePassed &&
+    referenceAlignmentPassed &&
+    backMatterZonesPassed;
   const structuralMatchPassed =
     columnStructureMatches &&
     !duplicatePageContentDetected &&
@@ -225,7 +246,10 @@ export function createConversionReport(
     pageCount: document.pages.length,
     pageCountMatches: comparison.pageCountMatches && comparison.referencePageCount === audit.pageCount,
     visualMatchPassed: comparison.visualMatchPassed,
+    exactVisualMatchPassed: comparison.exactVisualMatchPassed,
+    fontTolerantVisualMatchPassed: comparison.fontTolerantVisualMatchPassed,
     visualDiffThreshold: comparison.visualDiffThreshold,
+    rawPixelMismatchRatio: comparison.rawPixelMismatchRatio,
     nativeAuditPassed: audit.nativeAuditPassed,
     structuralMatchPassed,
     columnStructureMatches,
@@ -249,6 +273,12 @@ export function createConversionReport(
     repeatedFooterTextInStoryDetected,
     misplacedBackMatterDetected,
     textWrapPassed,
+    pageLandmarkMatches,
+    sectionPageMatches,
+    captionPresencePassed,
+    tablePresencePassed,
+    referenceAlignmentPassed,
+    backMatterZonesPassed,
     releaseApproved:
       comparison.pageCountMatches &&
       comparison.referencePageCount === audit.pageCount &&

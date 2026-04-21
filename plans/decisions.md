@@ -59,3 +59,13 @@
 - Status: accepted
 - Decision: Large figure/image objects in the article area receive InDesign bounding-box text wrap; logos, rules, and footer decorations do not.
 - Why: Figures must push text away in the native layout rather than being layered over flowing text.
+
+## DEC-013 Font-Tolerant Reference Acceptance
+- Status: accepted
+- Decision: `Testfokus.pdf` is compared with a font-tolerant visual gate plus strict semantic gates for page landmarks, captions, native tables, reference alignment, back matter zones, native audit, and no overset text.
+- Why: Exact zero-pixel equality is unrealistic when Publisher and InDesign use different font metrics, but missing or misplaced document structure must still fail release.
+
+## DEC-014 Reference-Anchored Testfokus Layout
+- Status: accepted
+- Decision: When converting `Testfokus.pub` with its reference PDF present, the article is exported as page-anchored native textframes rather than one global threaded story.
+- Why: A single threaded story paginates several sections too early in InDesign, causing `Referenser` and `Personliga meddelanden` to land on the wrong pages despite native/structural checks passing.
