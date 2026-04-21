@@ -73,3 +73,25 @@ Fix the observed `Testfokus.pub` fidelity regressions in native InDesign output:
 - `pnpm convert:pub Testfokus.pub` passes with `releaseApproved: true`.
 - `pnpm acceptance:run` passes `testfokus`.
 - Real HTTP upload/poll/result flow completed with `releaseApproved: true`.
+
+## Iteration 4: Testfokus Cover, Footer, Back Matter, and Figure Wrap Repair
+### Goal
+Fix the next observed fidelity regressions: title/abstract missing from page 1, footer missing URL/page structure, back matter leaking after references, and figures overlaying text.
+
+### Done
+- Quill content is segmented into article, cover title, cover abstract, footer, and back matter zones.
+- Page 1 exports title and abstract as separate native frames before the article story.
+- Footer exports two native lines with focus number, page number, and `www.agrifood.se`.
+- Last-page back matter exports in separate native frames instead of the article story.
+- Large figure objects get native InDesign text wrap.
+- Pipeline prefers `Testfokus.pdf` when available as the reference PDF.
+- Report and release gate include cover, footer URL/page, misplaced back matter, and text-wrap checks.
+
+### Status
+- Complete.
+
+### Evidence
+- `pnpm typecheck` passes.
+- `pnpm convert:pub Testfokus.pub` passes with `releaseApproved: true`.
+- `pnpm acceptance:run` passes `testfokus`.
+- Real HTTP upload/poll/result flow completed with `releaseApproved: true`, `ref=project-root`, `cover=true/true`, `footer=true`, `wrap=true`, and `overset=false`.

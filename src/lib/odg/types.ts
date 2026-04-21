@@ -50,7 +50,7 @@ export interface DesignParagraph {
 export interface DesignTextFrame {
   kind: "textFrame";
   id: string;
-  role?: "story" | "footer" | "layout-placeholder";
+  role?: "story" | "cover-title" | "cover-abstract" | "footer" | "back-matter" | "layout-placeholder";
   styleId?: string;
   xPt: number;
   yPt: number;
@@ -73,6 +73,7 @@ export interface DesignShape {
   text?: string;
   points?: string;
   fillImage?: DesignImageFill;
+  textWrap?: "bounding-box";
 }
 
 export type DesignPageItem = DesignTextFrame | DesignShape;
@@ -125,5 +126,13 @@ export interface DesignDocument {
     footerTextFrames: number;
     firstStoryFrameColumnCount?: number;
     mainFlowColumnCounts: number[];
+    coverTitlePresent: boolean;
+    coverAbstractPresent: boolean;
+    articleStartsAfterCoverPassed: boolean;
+    footerPageAndUrlPresent: boolean;
+    repeatedFooterTextInStoryDetected: boolean;
+    misplacedBackMatterDetected: boolean;
+    textWrapPassed: boolean;
+    textWrapShapeCount: number;
   };
 }

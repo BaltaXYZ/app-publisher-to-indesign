@@ -244,6 +244,9 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
         var textFrame = page.textFrames.add();
         textFrame.geometricBounds = bounds;
         textFrame.textFramePreferences.insetSpacing = [0, 0, 0, 0];
+        try {
+          textFrame.textFramePreferences.ignoreWrap = false;
+        } catch (error) {}
         if (item.columnCount && item.columnCount > 1) {
           try {
             textFrame.textFramePreferences.textColumnCount = item.columnCount;
@@ -285,6 +288,12 @@ function buildExporterScript(model: DesignDocument, assetMap: Record<string, str
           rect.fit(FitOptions.CONTENT_TO_FRAME);
         } else {
           rect.fillColor = doc.swatches.itemByName("None");
+        }
+        if (item.textWrap === "bounding-box") {
+          try {
+            rect.textWrapPreferences.textWrapMode = TextWrapModes.BOUNDING_BOX_TEXT_WRAP;
+            rect.textWrapPreferences.textWrapOffset = [8, 8, 8, 8];
+          } catch (error) {}
         }
       }
     }

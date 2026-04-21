@@ -44,3 +44,18 @@
 - Status: accepted
 - Decision: The release gate now blocks malformed one-character story flows, missing first-page one-column intro flow, missing two-column main flow, missing footer labels, overset text, font substitution issues, and missing canonical text coverage.
 - Why: These were the concrete regressions observed in the generated `IDML`; they must be machine-checked so the UI cannot report success for a structurally wrong document.
+
+## DEC-010 Semantic Quill Segmentation
+- Status: accepted
+- Decision: Split repaired Quill text into article story, cover title, cover abstract, generated footers, and back matter instead of exporting the whole Quill stream as one threaded story.
+- Why: `Testfokus.pub` stores title, abstract, footers, and final information material after the references in Quill order; treating them as article text produces the wrong visible flow.
+
+## DEC-011 Reference PDF Priority
+- Status: accepted
+- Decision: Prefer an explicit reference PDF, then a same-basename PDF next to the `.pub`, then a same-basename PDF in the project root, before falling back to LibreOffice rendering.
+- Why: User-supplied reference PDFs are the strongest available visual truth when libmspub/LibreOffice ordering differs from the intended Publisher layout.
+
+## DEC-012 Native Figure Text Wrap
+- Status: accepted
+- Decision: Large figure/image objects in the article area receive InDesign bounding-box text wrap; logos, rules, and footer decorations do not.
+- Why: Figures must push text away in the native layout rather than being layered over flowing text.

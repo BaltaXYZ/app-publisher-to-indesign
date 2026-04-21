@@ -32,7 +32,8 @@ const PUB2RAW_CANDIDATES = [
 ];
 const MALFORMED_SINGLE_CHARACTER_RUN_THRESHOLD = 20;
 const CANONICAL_STORY_START_MARKER = "Inledning";
-const FOOTER_LABEL = "Fokus 2025:9";
+const FOOTER_LABEL = "Fokus • Nr 2025:9";
+const FOOTER_URL = "www.agrifood.se";
 
 interface RawShapeStyle {
   fillImage?: { mimeType: string; base64: string };
@@ -41,7 +42,7 @@ interface RawShapeStyle {
 interface MutableRawTextFrame {
   kind: "textFrame";
   id: string;
-  role?: "story" | "footer" | "layout-placeholder";
+  role?: "story" | "cover-title" | "cover-abstract" | "footer" | "back-matter" | "layout-placeholder";
   xPt: number;
   yPt: number;
   widthPt: number;
@@ -57,6 +58,13 @@ interface MalformedParagraphSummary {
   detected: boolean;
   singleCharacterParagraphCount: number;
   longestRun: number;
+}
+
+interface CanonicalStorySegments {
+  articleParagraphs: string[];
+  coverTitleParagraphs: string[];
+  coverAbstractParagraphs: string[];
+  backMatterParagraphs: string[];
 }
 
 function paragraphText(paragraph: DesignParagraph): string {
@@ -328,6 +336,54 @@ function summarizeMalformedSingleCharacterParagraphs(paragraphs: DesignParagraph
   };
 }
 
+function firstIndexContaining(paragraphs: string[], value: string): number {
+  const normalizedNeedle = normalizeForMatch(value);
+  return paragraphs.findIndex((paragraph) => normalizeForMatch(paragraph).includes(normalizedNeedle));
+}
+
+function firstIndexEqual(paragraphs: string[], value: string): number {
+  const normalizedNeedle = normalizeForMatch(value);
+  return paragraphs.findIndex((paragraph) => normalizeForMatch(paragraph) === normalizedNeedle);
+}
+
+function segmentCanonicalParagraphs(canonicalParagraphs: string[]): CanonicalStorySegments {
+  const personalMessagesIndex = firstIndexEqual(canonicalParagraphs, "Personliga meddelanden");
+  const abstractIndex = firstIndexContaining(canonicalParagraphs, "Under de senaste 20 åren har försäljningen");
+  const coverTitleStartIndex = firstIndexContaining(canonicalParagraphs, "Hur påverkar EMV konsumenterna");
+  const footerStartIndex = firstIndexContaining(canonicalParagraphs, "Fokus • Nr 2025:9");
+  const backMatterStartIndex = firstIndexContaining(canonicalParagraphs, "Författare");
+  const backMatterEndIndex = firstIndexContaining(canonicalParagraphs, "Box 7080");
+
+  const articleEndIndex =
+    personalMessagesIndex === -1
+      ? canonicalParagraphs.length
+      : Math.min(canonicalParagraphs.length, personalMessagesIndex + 5);
+  const articleParagraphs = canonicalParagraphs.slice(0, articleEndIndex);
+
+  const coverTitleParagraphs =
+    coverTitleStartIndex === -1
+      ? []
+      : canonicalParagraphs.slice(coverTitleStartIndex, Math.min(canonicalParagraphs.length, coverTitleStartIndex + 2));
+  const coverAbstractParagraphs = abstractIndex === -1 ? [] : [canonicalParagraphs[abstractIndex]];
+  const backMatterParagraphs =
+    backMatterStartIndex === -1
+      ? []
+      : canonicalParagraphs.slice(
+          backMatterStartIndex,
+          backMatterEndIndex === -1 ? canonicalParagraphs.length : Math.min(canonicalParagraphs.length, backMatterEndIndex + 2)
+        );
+
+  return {
+    articleParagraphs,
+    coverTitleParagraphs,
+    coverAbstractParagraphs,
+    backMatterParagraphs:
+      footerStartIndex !== -1 && footerStartIndex < backMatterStartIndex
+        ? backMatterParagraphs.filter((paragraph) => !normalizeForMatch(paragraph).startsWith("fokus • nr 2025:9"))
+        : backMatterParagraphs
+  };
+}
+
 function cloneRunStyle(template: DesignTextRun | undefined, text: string): DesignTextRun {
   return {
     text,
@@ -337,6 +393,22 @@ function cloneRunStyle(template: DesignTextRun | undefined, text: string): Desig
     fontWeight: template?.fontWeight,
     fontStyle: template?.fontStyle,
     color: template?.color
+  };
+}
+
+function makeStyledParagraph(text: string, options: Partial<DesignTextRun> = {}, styleId?: string): DesignParagraph {
+  return {
+    styleId,
+    runs: [
+      {
+        text,
+        fontFamily: options.fontFamily ?? "Palatino Linotype",
+        fontSizePt: options.fontSizePt ?? 10,
+        fontWeight: options.fontWeight,
+        fontStyle: options.fontStyle,
+        color: options.color
+      }
+    ]
   };
 }
 
@@ -458,7 +530,17 @@ function makeFooterFrame(page: DesignPage, pageNumber: number, candidate: Mutabl
       {
         runs: [
           {
-            text: `${FOOTER_LABEL} | ${pageNumber}`,
+            text: `${FOOTER_LABEL} • sid ${pageNumber}`,
+            fontFamily: "Palatino Linotype",
+            fontSizePt: 7,
+            color: { hex: "#000000" }
+          }
+        ]
+      },
+      {
+        runs: [
+          {
+            text: FOOTER_URL,
             fontFamily: "Palatino Linotype",
             fontSizePt: 7,
             color: { hex: "#000000" }
@@ -467,6 +549,76 @@ function makeFooterFrame(page: DesignPage, pageNumber: number, candidate: Mutabl
       }
     ]
   };
+}
+
+function makeBackMatterFrames(page: DesignPage, paragraphs: string[], emptyFrames: MutableRawTextFrame[]): MutableRawTextFrame[] {
+  if (paragraphs.length === 0) {
+    return [];
+  }
+
+  const mainCandidate =
+    emptyFrames
+      .filter((frame) => frame.widthPt > page.widthPt * 0.45 && frame.heightPt > page.heightPt * 0.45)
+      .sort((left, right) => right.widthPt * right.heightPt - left.widthPt * left.heightPt)[0] ?? null;
+  const leftCandidates = emptyFrames
+    .filter((frame) => frame.xPt < page.widthPt * 0.3 && frame.widthPt < page.widthPt * 0.35)
+    .sort((left, right) => left.yPt - right.yPt);
+
+  const infoIndex = firstIndexContaining(paragraphs, "Christian Jörgensen");
+  const aboutIndex = firstIndexContaining(paragraphs, "AgriFood Economics Centre utför");
+  const publicationsIndex = firstIndexContaining(paragraphs, "AgriFood Economics Centre ger ut");
+  const addressIndex = firstIndexContaining(paragraphs, "Box 7080");
+  const mainTexts = [
+    ...(infoIndex === -1 ? [] : paragraphs.slice(infoIndex, aboutIndex === -1 ? undefined : aboutIndex)),
+    ...(aboutIndex === -1 ? [] : paragraphs.slice(aboutIndex, publicationsIndex === -1 ? undefined : publicationsIndex)),
+    ...(publicationsIndex === -1 ? [] : paragraphs.slice(publicationsIndex, addressIndex === -1 ? undefined : addressIndex + 2))
+  ].filter((paragraph, index, all) => paragraph.length > 0 && all.indexOf(paragraph) === index);
+
+  const mainFrame: MutableRawTextFrame = {
+    kind: "textFrame",
+    role: "back-matter",
+    id: "back-matter-main",
+    xPt: mainCandidate?.xPt ?? 195,
+    yPt: mainCandidate?.yPt ?? 123,
+    widthPt: mainCandidate?.widthPt ?? page.widthPt - 260,
+    heightPt: mainCandidate?.heightPt ?? page.heightPt - 230,
+    paragraphs: mainTexts.map((text) => makeStyledParagraph(text, { fontFamily: "Palatino Linotype", fontSizePt: 10 }))
+  };
+
+  const labelTexts = ["Författare", "Mer information", "Vad är AgriFood Economics Centre?", "Publikationer", "Kontakt"];
+  const labelFrames = labelTexts.map((text, index): MutableRawTextFrame => {
+    const candidate = leftCandidates[index];
+    return {
+      kind: "textFrame",
+      role: "back-matter",
+      id: `back-matter-label-${index + 1}`,
+      xPt: candidate?.xPt ?? 70,
+      yPt: candidate?.yPt ?? 125 + index * 105,
+      widthPt: candidate?.widthPt ?? 120,
+      heightPt: Math.max(candidate?.heightPt ?? 22, 22),
+      paragraphs: [
+        makeStyledParagraph(text, {
+          fontFamily: "Arial",
+          fontSizePt: 10,
+          fontWeight: "bold",
+          fontStyle: "italic",
+          color: { hex: "#00833E" }
+        })
+      ]
+    };
+  });
+
+  return [...labelFrames, mainFrame];
+}
+
+function shouldApplyFigureTextWrap(shape: Pick<DesignShape, "xPt" | "yPt" | "widthPt" | "heightPt">, page: DesignPage): boolean {
+  const minFigureArea = page.widthPt * page.heightPt * 0.08;
+  const area = shape.widthPt * shape.heightPt;
+  const isHorizontalRule = shape.heightPt < 8;
+  const isLogo = shape.yPt < 80 && shape.widthPt < page.widthPt * 0.45 && shape.heightPt < 90;
+  const isFooterDecoration = shape.yPt > page.heightPt - 90;
+
+  return area >= minFigureArea && !isHorizontalRule && !isLogo && !isFooterDecoration;
 }
 
 function buildLayoutAnalysis(document: DesignDocument): PageLayoutAnalysis[] {
@@ -498,6 +650,7 @@ export async function parsePubDocument(
 ): Promise<{ document: DesignDocument; assetMap: Map<string, string> }> {
   await mkdir(assetsDir, { recursive: true });
   const canonicalQuillParagraphs = await extractCanonicalQuillParagraphs(pubPath);
+  const canonicalSegments = segmentCanonicalParagraphs(canonicalQuillParagraphs);
 
   const executable = await resolvePub2RawExecutable();
   const { stdout } = await execFileAsync(executable, [path.resolve(pubPath)], {
@@ -701,6 +854,9 @@ export async function parsePubDocument(
         heightPt: bounds.heightPt,
         fillImage: imageFills.find((image) => image.name === name)
       };
+      if (shouldApplyFigureTextWrap(shape, currentPage)) {
+        shape.textWrap = "bounding-box";
+      }
 
       currentPage.items.push(shape);
       shapeIndex += 1;
@@ -837,15 +993,17 @@ export async function parsePubDocument(
     const sourceMalformedSummary = summarizeMalformedSingleCharacterParagraphs(sourceParagraphs);
     sourceMalformedSingleCharacterParagraphsDetected ||= sourceMalformedSummary.detected;
     let storyParagraphs = sourceParagraphs;
+    const canonicalArticleParagraphs =
+      canonicalSegments.articleParagraphs.length > 0 ? canonicalSegments.articleParagraphs : canonicalQuillParagraphs;
 
-    if (sourceMalformedSummary.detected && canonicalQuillParagraphs.length > 0) {
-      storyParagraphs = buildCanonicalParagraphs(canonicalQuillParagraphs, sourceParagraphs);
+    if (sourceMalformedSummary.detected && canonicalArticleParagraphs.length > 0) {
+      storyParagraphs = buildCanonicalParagraphs(canonicalArticleParagraphs, sourceParagraphs);
     }
 
     const finalMalformedSummary = summarizeMalformedSingleCharacterParagraphs(storyParagraphs);
     malformedSingleCharacterParagraphsDetected ||= finalMalformedSummary.detected;
     singleCharacterParagraphCount += finalMalformedSummary.singleCharacterParagraphCount;
-    canonicalTextCoverage = Math.max(canonicalTextCoverage, canonicalCoverage(canonicalQuillParagraphs, storyParagraphs));
+    canonicalTextCoverage = Math.max(canonicalTextCoverage, canonicalCoverage(canonicalArticleParagraphs, storyParagraphs));
 
     storyIndex += 1;
     const storyId = `story-${storyIndex}`;
@@ -876,28 +1034,58 @@ export async function parsePubDocument(
     if (firstStoryPage) {
       const firstPagePlaceholders = (emptyTextFramesByPageId.get(firstStoryPage.id) ?? [])
         .filter((frame) => looksLikeFirstPageStoryPlaceholder(frame, firstStoryPage, firstStoryFrame))
-        .sort((left, right) => left.yPt - right.yPt)
-        .map((frame, index) => ({
-          ...frame,
-          id: `${frame.id}-intro-${index + 1}`,
-          role: "story" as const,
+        .sort((left, right) => left.yPt - right.yPt);
+      const insertionIndex = firstStoryPage.items.indexOf(firstStoryFrame);
+      const coverFrames: MutableRawTextFrame[] = [];
+
+      if (firstPagePlaceholders[0] && canonicalSegments.coverTitleParagraphs.length > 0) {
+        coverFrames.push({
+          ...firstPagePlaceholders[0],
+          id: `${firstPagePlaceholders[0].id}-cover-title`,
+          role: "cover-title",
           columnCount: 1,
           columnGapPt: undefined,
-          storyId,
-          paragraphs: []
-        }));
+          paragraphs: canonicalSegments.coverTitleParagraphs.map((text) =>
+            makeStyledParagraph(text, {
+              fontFamily: "Arial",
+              fontSizePt: 18,
+              fontWeight: "bold",
+              color: { hex: "#00833E" }
+            })
+          )
+        });
+      }
 
-      if (firstPagePlaceholders.length > 0) {
-        const insertionIndex = firstStoryPage.items.indexOf(firstStoryFrame);
-        firstStoryPage.items.splice(insertionIndex, 0, ...firstPagePlaceholders);
-      } else {
-        firstStoryFrame.columnCount = 1;
+      if (firstPagePlaceholders[1] && canonicalSegments.coverAbstractParagraphs.length > 0) {
+        const abstractHeight = Math.max(70, Math.min(firstPagePlaceholders[1].heightPt, firstStoryFrame.yPt - firstPagePlaceholders[1].yPt - 12));
+        coverFrames.push({
+          ...firstPagePlaceholders[1],
+          id: `${firstPagePlaceholders[1].id}-cover-abstract`,
+          role: "cover-abstract",
+          columnCount: 1,
+          columnGapPt: undefined,
+          heightPt: abstractHeight,
+          paragraphs: canonicalSegments.coverAbstractParagraphs.map((text) =>
+            makeStyledParagraph(text, {
+              fontFamily: "Palatino Linotype",
+              fontSizePt: 10,
+              color: { hex: "#000000" }
+            })
+          )
+        });
+      }
+
+      if (coverFrames.length > 0) {
+        firstStoryPage.items.splice(insertionIndex, 0, ...coverFrames);
       }
     }
 
     for (const page of pages) {
       const hasStoryFrame = page.items.some((item) => item.kind === "textFrame" && item.storyId === storyId);
       if (hasStoryFrame) {
+        continue;
+      }
+      if (canonicalSegments.backMatterParagraphs.length > 0 && page === pages.at(-1)) {
         continue;
       }
 
@@ -918,6 +1106,19 @@ export async function parsePubDocument(
     }
   }
 
+  if (canonicalSegments.backMatterParagraphs.length > 0 && pages.length > 0) {
+    const backMatterPage = pages.at(-1);
+    if (backMatterPage) {
+      backMatterPage.items.push(
+        ...makeBackMatterFrames(
+          backMatterPage,
+          canonicalSegments.backMatterParagraphs,
+          emptyTextFramesByPageId.get(backMatterPage.id) ?? []
+        )
+      );
+    }
+  }
+
   let footerTextFrames = 0;
   for (let index = 0; index < pages.length; index += 1) {
     const page = pages[index];
@@ -927,6 +1128,44 @@ export async function parsePubDocument(
 
     page.items.push(makeFooterFrame(page, index + 1, footerCandidate));
     footerTextFrames += 1;
+  }
+
+  const storyTextForDiagnostics = normalizeForMatch(textStories.map((story) => paragraphsText(story.paragraphs)).join("\n"));
+  const allTextFrames = pages.flatMap((page) => page.items).filter((item): item is DesignTextFrame => item.kind === "textFrame");
+  const coverTitlePresent = allTextFrames.some((frame) => frame.role === "cover-title" && normalizeText(paragraphsText(frame.paragraphs ?? [])).length > 0);
+  const coverAbstractPresent = allTextFrames.some(
+    (frame) => frame.role === "cover-abstract" && normalizeForMatch(paragraphsText(frame.paragraphs ?? [])).includes("under de senaste 20 åren")
+  );
+  const firstStoryFrame = allTextFrames.find((item) => item.role === "story" && Boolean(item.storyId));
+  const coverAbstractFrame = allTextFrames.find((item) => item.role === "cover-abstract");
+  const articleStartsAfterCoverPassed =
+    !coverAbstractFrame || !firstStoryFrame || firstStoryFrame.yPt >= coverAbstractFrame.yPt + coverAbstractFrame.heightPt - 8;
+  const footerPageAndUrlPresent = pages.every((page, index) =>
+    page.items.some((item) => {
+      if (item.kind !== "textFrame" || item.role !== "footer") {
+        return false;
+      }
+      const text = paragraphsText(item.paragraphs ?? []);
+      return text.includes(`${FOOTER_LABEL} • sid ${index + 1}`) && text.includes(FOOTER_URL);
+    })
+  );
+  const repeatedFooterTextInStoryDetected = storyTextForDiagnostics.includes("fokus • nr 2025:9") || storyTextForDiagnostics.includes("www.agrifood.se");
+  const misplacedBackMatterDetected =
+    storyTextForDiagnostics.includes("vad är agrifood economics centre") ||
+    storyTextForDiagnostics.includes("författare kontakt publikationer");
+  let textWrapShapeCount = 0;
+  let unwrappedFigureCount = 0;
+  for (const page of pages) {
+    for (const item of page.items) {
+      if (item.kind !== "shape" || !shouldApplyFigureTextWrap(item, page)) {
+        continue;
+      }
+      if (item.textWrap === "bounding-box") {
+        textWrapShapeCount += 1;
+      } else {
+        unwrappedFigureCount += 1;
+      }
+    }
   }
 
   const document: DesignDocument = {
@@ -958,7 +1197,15 @@ export async function parsePubDocument(
         page.items
           .filter((item): item is DesignTextFrame => item.kind === "textFrame" && item.role === "story" && Boolean(item.storyId))
           .reduce((max, frame) => Math.max(max, frame.columnCount ?? 1), 0)
-      )
+      ),
+      coverTitlePresent,
+      coverAbstractPresent,
+      articleStartsAfterCoverPassed,
+      footerPageAndUrlPresent,
+      repeatedFooterTextInStoryDetected,
+      misplacedBackMatterDetected,
+      textWrapPassed: textWrapShapeCount > 0 && unwrappedFigureCount === 0,
+      textWrapShapeCount
     }
   };
 

@@ -108,10 +108,15 @@ function renderReport(report) {
     `Strukturell match: ${report.structuralMatchPassed ? "godkänd" : "underkänd"}`,
     `Kolumnstruktur: ${report.columnStructureMatches ? "godkänd" : "underkänd"}`,
     `Förstasida enkolumnsintro: ${report.firstPageIntroColumnPassed ? "godkänd" : "underkänd"}`,
+    `Förstasida titel: ${report.coverTitlePresent ? "godkänd" : "saknas"}`,
+    `Förstasida abstract: ${report.coverAbstractPresent ? "godkänd" : "saknas"}`,
+    `Artikel efter förstasidesmaterial: ${report.articleStartsAfterCoverPassed ? "godkänd" : "underkänd"}`,
     `Huvudflöde två kolumner: ${report.mainFlowTwoColumnPassed ? "godkänd" : "underkänd"}`,
     `Textflöde: ${report.malformedSingleCharacterParagraphsDetected ? "enbokstavsfel upptäckt" : "godkänt"}`,
     `Kanonisk text i PDF: ${Math.round((report.exportedCanonicalTextCoverage ?? 0) * 100)}%`,
-    `Sidfot: ${report.footerTextPresent ? "godkänd" : "saknas"}`,
+    `Sidfot: ${report.footerPageAndUrlPresent ? "sidnummer och URL finns" : "saknas/inkomplett"}`,
+    `Eftermaterial i huvudstory: ${report.misplacedBackMatterDetected ? "upptäckt" : "nej"}`,
+    `Figur-textwrap: ${report.textWrapPassed ? "godkänd" : "underkänd"}`,
     `Sidduplicering: ${report.duplicatePageContentDetected ? "upptäckt" : "ingen upptäckt"}`,
     `Native audit: ${report.nativeAuditPassed ? "godkänd" : "underkänd"}`,
     `Release gate: ${report.releaseApproved ? "godkänd" : "underkänd"}`,
@@ -127,7 +132,8 @@ function renderReport(report) {
     `Overset text: ${report.oversetText ? "ja" : "nej"}`,
     `Saknade länkar: ${report.missingLinks.length}`,
     `Fontproblem: ${report.fontIssues.length}`,
-    `Bakgrundssurrogat: ${report.backgroundSurrogatesDetected ? "ja" : "nej"}`
+    `Bakgrundssurrogat: ${report.backgroundSurrogatesDetected ? "ja" : "nej"}`,
+    `Referens-PDF: ${report.referencePdfSource ?? "okänd"}`
   ]);
 
   const differingPages = (report.pageDiffs ?? [])

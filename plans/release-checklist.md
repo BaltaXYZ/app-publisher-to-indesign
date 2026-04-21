@@ -10,6 +10,10 @@
 - [x] Structural acceptance blocks malformed one-character paragraph flows.
 - [x] Structural acceptance blocks missing first-page one-column intro flow.
 - [x] Structural acceptance blocks missing native footer labels.
+- [x] Structural acceptance blocks missing cover title or abstract.
+- [x] Structural acceptance blocks footer text that lacks page number or `www.agrifood.se`.
+- [x] Structural acceptance blocks cover/footer/back matter leaking into the article story.
+- [x] Structural acceptance blocks missing figure text wrap for large article figures.
 - [x] UI/API only marks a job completed when the stricter text-flow, structure, font, footer, and native audit gates pass.
 
 ## Technical
@@ -19,6 +23,9 @@
 - [x] Publisher raw parser implemented via `libmspub` (`pub2raw`).
 - [x] Main repeated story is exported as a threaded InDesign story instead of duplicated page-local content.
 - [x] Quill canonical story text repairs malformed `pub2raw` story tails while preserving `pub2raw` geometry.
+- [x] Quill canonical story text is segmented into article, cover, footer, and back matter zones.
+- [x] Same-basename reference PDFs are preferred over LibreOffice fallback.
+- [x] Large figures export with native InDesign bounding-box text wrap.
 - [x] Font resolver maps `Palatino Linotype`, `Arial`, and `Times New Roman` to installed InDesign font variants.
 - [x] Temporary file retention and cleanup verified.
 - [x] Run and deploy documentation written.
@@ -33,4 +40,4 @@
 - [x] Adobe/InDesign document-open validation evidence captured.
 
 ## Current Release Call
-- Locally ready and verified against the current acceptance corpus with strict text-flow, structural, footer, font, and native-audit gating. Public deployment remains blocked by runtime platform constraints.
+- Locally ready and verified against the current acceptance corpus with strict text-flow, cover, footer, back matter, figure-wrap, structural, font, and native-audit gating. Public deployment remains blocked by runtime platform constraints.

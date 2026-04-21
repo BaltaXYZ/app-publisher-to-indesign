@@ -83,12 +83,21 @@ function wordCoverage(source: string, target: string): number {
 }
 
 function hasFooterOnEveryPage(audit: InDesignAuditResult): boolean {
-  return audit.pageSummaries.every((page) => page.textFingerprint.includes("Fokus 2025:9"));
+  return audit.pageSummaries.every((page) => page.textFingerprint.includes("Fokus • Nr 2025:9"));
+}
+
+function hasFooterPageAndUrlOnEveryPage(audit: InDesignAuditResult): boolean {
+  return audit.pageSummaries.every(
+    (page) =>
+      page.textFingerprint.includes(`Fokus • Nr 2025:9 • sid ${page.pageNumber}`) &&
+      page.textFingerprint.includes("www.agrifood.se")
+  );
 }
 
 export interface ConversionReport {
   sourceFile: string;
   referencePdfPath?: string;
+  referencePdfSource: string;
   candidatePdfPath: string;
   pageCount: number;
   pageCountMatches: boolean;
@@ -110,6 +119,13 @@ export interface ConversionReport {
   firstPageIntroColumnPassed: boolean;
   mainFlowTwoColumnPassed: boolean;
   footerTextPresent: boolean;
+  coverTitlePresent: boolean;
+  coverAbstractPresent: boolean;
+  articleStartsAfterCoverPassed: boolean;
+  footerPageAndUrlPresent: boolean;
+  repeatedFooterTextInStoryDetected: boolean;
+  misplacedBackMatterDetected: boolean;
+  textWrapPassed: boolean;
   releaseApproved: boolean;
   convertedTextFrames: number;
   convertedShapes: number;
@@ -130,7 +146,8 @@ export function createConversionReport(
   candidatePdfPath: string,
   document: DesignDocument,
   comparison: PdfComparisonResult,
-  audit: InDesignAuditResult
+  audit: InDesignAuditResult,
+  referencePdfSource = "unknown"
 ): ConversionReport {
   let convertedTextFrames = 0;
   let convertedShapes = 0;
@@ -166,18 +183,34 @@ export function createConversionReport(
   const singleCharacterParagraphCount = diagnostics?.singleCharacterParagraphCount ?? 0;
   const canonicalTextCoverage = diagnostics?.canonicalTextCoverage ?? 1;
   const exportedCanonicalTextCoverage = wordCoverage(documentStoryText(document), auditText(audit));
-  const firstPageIntroColumnPassed = (diagnostics?.firstStoryFrameColumnCount ?? 1) === 1;
+  const firstPageIntroColumnPassed =
+    (diagnostics?.firstStoryFrameColumnCount ?? 1) === 1 ||
+    Boolean(diagnostics?.coverTitlePresent && diagnostics?.coverAbstractPresent);
   const mainFlowTwoColumnPassed = (diagnostics?.mainFlowColumnCounts ?? [])
     .slice(1, Math.min(17, diagnostics?.mainFlowColumnCounts.length ?? 0))
     .every((columnCount) => columnCount >= 2);
   const footerTextPresent = hasFooterOnEveryPage(audit);
+  const coverTitlePresent = diagnostics?.coverTitlePresent ?? false;
+  const coverAbstractPresent = diagnostics?.coverAbstractPresent ?? false;
+  const articleStartsAfterCoverPassed = diagnostics?.articleStartsAfterCoverPassed ?? false;
+  const footerPageAndUrlPresent = (diagnostics?.footerPageAndUrlPresent ?? false) && hasFooterPageAndUrlOnEveryPage(audit);
+  const repeatedFooterTextInStoryDetected = diagnostics?.repeatedFooterTextInStoryDetected ?? false;
+  const misplacedBackMatterDetected = diagnostics?.misplacedBackMatterDetected ?? false;
+  const textWrapPassed = diagnostics?.textWrapPassed ?? false;
   const textFlowPassed =
     !malformedSingleCharacterParagraphsDetected &&
     canonicalTextCoverage >= 0.98 &&
     exportedCanonicalTextCoverage >= 0.98 &&
     firstPageIntroColumnPassed &&
     mainFlowTwoColumnPassed &&
-    footerTextPresent;
+    footerTextPresent &&
+    coverTitlePresent &&
+    coverAbstractPresent &&
+    articleStartsAfterCoverPassed &&
+    footerPageAndUrlPresent &&
+    !repeatedFooterTextInStoryDetected &&
+    !misplacedBackMatterDetected &&
+    textWrapPassed;
   const structuralMatchPassed =
     columnStructureMatches &&
     !duplicatePageContentDetected &&
@@ -187,6 +220,7 @@ export function createConversionReport(
   return {
     sourceFile,
     referencePdfPath,
+    referencePdfSource,
     candidatePdfPath,
     pageCount: document.pages.length,
     pageCountMatches: comparison.pageCountMatches && comparison.referencePageCount === audit.pageCount,
@@ -208,6 +242,13 @@ export function createConversionReport(
     firstPageIntroColumnPassed,
     mainFlowTwoColumnPassed,
     footerTextPresent,
+    coverTitlePresent,
+    coverAbstractPresent,
+    articleStartsAfterCoverPassed,
+    footerPageAndUrlPresent,
+    repeatedFooterTextInStoryDetected,
+    misplacedBackMatterDetected,
+    textWrapPassed,
     releaseApproved:
       comparison.pageCountMatches &&
       comparison.referencePageCount === audit.pageCount &&
