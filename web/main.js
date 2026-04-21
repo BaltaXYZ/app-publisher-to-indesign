@@ -12,7 +12,18 @@ const qualityList = document.getElementById("quality-list");
 const diffList = document.getElementById("diff-list");
 
 let pollTimer = null;
-let activeJobId = null;
+let activeJobId = window.sessionStorage.getItem("pub2indesign.activeJobId");
+let consecutivePollFailures = 0;
+
+function rememberActiveJob(jobId) {
+  activeJobId = jobId;
+  window.sessionStorage.setItem("pub2indesign.activeJobId", jobId);
+}
+
+function forgetActiveJob() {
+  activeJobId = null;
+  window.sessionStorage.removeItem("pub2indesign.activeJobId");
+}
 
 function setSelectedFile() {
   const file = fileInput.files?.[0];
@@ -56,19 +67,21 @@ async function pollJob(jobId) {
   }
 
   const { job, report } = payload;
+  consecutivePollFailures = 0;
   jobIdText.textContent = `Jobb: ${job.id}`;
   setTimeline(job.status);
 
   if (job.status === "uploaded") {
-    statusText.textContent = "Filen är uppladdad och väntar på att bearbetas.";
+    statusText.textContent = `Filen är uppladdad och väntar på att bearbetas. Senast kontrollerad ${new Date().toLocaleTimeString("sv-SE")}.`;
     return false;
   } else if (job.status === "processing") {
-    statusText.textContent = "Konverteringen körs. Det här kan ta en stund beroende på dokumentets innehåll.";
+    statusText.textContent = `Konverteringen körs. Senast kontrollerad ${new Date().toLocaleTimeString("sv-SE")}.`;
     return false;
   } else if (job.status === "failed") {
     statusText.textContent = `Konverteringen misslyckades: ${job.error ?? "okänt fel"}`;
     resultPanel.hidden = false;
     renderReport(report);
+    forgetActiveJob();
     return true;
   } else if (job.status === "completed") {
     statusText.textContent = "Konverteringen är klar och passerade native-audit samt den strukturella layoutkontrollen.";
@@ -76,6 +89,7 @@ async function pollJob(jobId) {
     downloadLink.hidden = false;
     downloadLink.href = `/api/jobs/${job.id}/result`;
     renderReport(report);
+    forgetActiveJob();
     return true;
   }
 
@@ -144,8 +158,13 @@ function schedulePoll(jobId) {
 
       schedulePoll(jobId);
     } catch (error) {
-      statusText.textContent = error.message;
-      stopPolling();
+      consecutivePollFailures += 1;
+      statusText.textContent = `${error.message} Försöker igen (${consecutivePollFailures}).`;
+      if (activeJobId === jobId) {
+        schedulePoll(jobId);
+      } else {
+        stopPolling();
+      }
     }
   }, 1500);
 }
@@ -205,7 +224,7 @@ form.addEventListener("submit", async (event) => {
   }
 
   const jobId = payload.job.id;
-  activeJobId = jobId;
+  rememberActiveJob(jobId);
   jobIdText.textContent = `Jobb: ${jobId}`;
   stopPolling();
   const isTerminal = await pollJob(jobId);
@@ -228,5 +247,39 @@ document.addEventListener("visibilitychange", async () => {
     }
   } catch (error) {
     statusText.textContent = error.message;
+    schedulePoll(activeJobId);
   }
 });
+
+window.addEventListener("focus", async () => {
+  if (!activeJobId) {
+    return;
+  }
+
+  try {
+    const isTerminal = await pollJob(activeJobId);
+    if (!isTerminal) {
+      schedulePoll(activeJobId);
+    }
+  } catch (error) {
+    statusText.textContent = error.message;
+    schedulePoll(activeJobId);
+  }
+});
+
+if (activeJobId) {
+  jobIdText.textContent = `Jobb: ${activeJobId}`;
+  statusText.textContent = "Återupptar statuskontroll för senaste jobbet...";
+  void pollJob(activeJobId)
+    .then((isTerminal) => {
+      if (!isTerminal && activeJobId) {
+        schedulePoll(activeJobId);
+      }
+    })
+    .catch((error) => {
+      statusText.textContent = error.message;
+      if (activeJobId) {
+        schedulePoll(activeJobId);
+      }
+    });
+}
