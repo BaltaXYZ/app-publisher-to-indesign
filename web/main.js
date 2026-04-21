@@ -12,12 +12,17 @@ const qualityList = document.getElementById("quality-list");
 const diffList = document.getElementById("diff-list");
 
 let pollTimer = null;
-let activeJobId = window.sessionStorage.getItem("pub2indesign.activeJobId");
+const urlJobId = new URLSearchParams(window.location.search).get("job");
+let activeJobId =
+  urlJobId ||
+  window.sessionStorage.getItem("pub2indesign.activeJobId") ||
+  window.sessionStorage.getItem("pub2indesign.latestJobId");
 let consecutivePollFailures = 0;
 
 function rememberActiveJob(jobId) {
   activeJobId = jobId;
   window.sessionStorage.setItem("pub2indesign.activeJobId", jobId);
+  window.sessionStorage.setItem("pub2indesign.latestJobId", jobId);
 }
 
 function forgetActiveJob() {
@@ -34,7 +39,9 @@ function setTimeline(state) {
   const states = {
     uploaded: 1,
     processing: 3,
-    completed: 4,
+    completed: 3,
+    verification_failed: 3,
+    verified: 4,
     failed: 0
   };
 
@@ -68,6 +75,9 @@ async function pollJob(jobId) {
 
   const { job, report } = payload;
   consecutivePollFailures = 0;
+  if (window.location.search !== `?job=${job.id}`) {
+    window.history.replaceState({}, "", `?job=${job.id}`);
+  }
   jobIdText.textContent = `Jobb: ${job.id}`;
   setTimeline(job.status);
 
@@ -78,13 +88,19 @@ async function pollJob(jobId) {
     statusText.textContent = `Konverteringen körs. Senast kontrollerad ${new Date().toLocaleTimeString("sv-SE")}.`;
     return false;
   } else if (job.status === "failed") {
-    statusText.textContent = `Konverteringen misslyckades: ${job.error ?? "okänt fel"}`;
+    setTimeline(report ? "verification_failed" : "failed");
+    statusText.textContent = report
+      ? `Konverteringen kördes klart men underkändes i verifieringen: ${job.error ?? "se rapporten nedan"}`
+      : `Konverteringen misslyckades: ${job.error ?? "okänt fel"}`;
     resultPanel.hidden = false;
     renderReport(report);
     forgetActiveJob();
     return true;
   } else if (job.status === "completed") {
-    statusText.textContent = "Konverteringen är klar och passerade native-audit samt den strukturella layoutkontrollen.";
+    setTimeline(report?.releaseApproved ? "verified" : "verification_failed");
+    statusText.textContent = report?.releaseApproved
+      ? "Konverteringen är verifierad och passerade release-gaten."
+      : "Konverteringen är klar, men rapporten är inte godkänd.";
     resultPanel.hidden = false;
     downloadLink.hidden = false;
     downloadLink.href = `/api/jobs/${job.id}/result`;

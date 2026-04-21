@@ -252,6 +252,7 @@ export function createConversionReport(
     releaseApproved:
       comparison.pageCountMatches &&
       comparison.referencePageCount === audit.pageCount &&
+      comparison.visualMatchPassed &&
       audit.nativeAuditPassed &&
       structuralMatchPassed,
     convertedTextFrames,

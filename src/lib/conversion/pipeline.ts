@@ -116,6 +116,7 @@ export async function runConversionPipeline(
       report.misplacedBackMatterDetected ? "eftermaterial ligger kvar i huvudstoryn" : null,
       !report.textWrapPassed ? "figur-textwrap saknas" : null,
       report.exportedCanonicalTextCoverage < 0.98 ? "kanonisk Publisher-text saknas i exporterad PDF" : null,
+      !report.visualMatchPassed ? "visuell pixeljämförelse mot referens-PDF misslyckades" : null,
       !report.nativeAuditPassed ? "native-audit misslyckades" : null
     ].filter(Boolean);
 
