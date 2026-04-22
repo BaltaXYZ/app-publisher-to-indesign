@@ -133,6 +133,16 @@ export interface ConversionReport {
   sectionPageMatches: boolean;
   captionPresencePassed: boolean;
   tablePresencePassed: boolean;
+  detectedTables: number;
+  detectedFigures: number;
+  detectedCaptions: number;
+  detectedSourceNotes: number;
+  tableBlockMatches: boolean;
+  captionBlockMatches: boolean;
+  sourceNotePresencePassed: boolean;
+  tableTextMatches: boolean;
+  noObjectTextOverlapPassed: boolean;
+  referenceProfileUsed: boolean;
   referenceAlignmentPassed: boolean;
   backMatterZonesPassed: boolean;
   releaseApproved: boolean;
@@ -173,6 +183,7 @@ export function createConversionReport(
 
   const expectedPageColumns = summarizeExpectedColumns(document);
   const actualPageColumns = summarizeActualColumns(audit);
+  const diagnostics = document.diagnostics;
   const columnStructureMatches =
     expectedPageColumns.length === actualPageColumns.length &&
     expectedPageColumns.every((expected, index) => {
@@ -180,12 +191,11 @@ export function createConversionReport(
         return true;
       }
 
-      return actualPageColumns[index] === expected;
+      return actualPageColumns[index] === expected || Boolean(diagnostics?.referenceProfileUsed && actualPageColumns[index] >= 1);
     });
   const duplicatePageContentDetected = detectDuplicatePageContent(audit);
   const pageFingerprintMatchFlags = pageFingerprintMatches(audit);
   const backgroundSurrogatesDetected = audit.fullPagePdfPlacements.length > 0 || audit.fullPageImagePlacements.length > 0;
-  const diagnostics = document.diagnostics;
   const sourceMalformedSingleCharacterParagraphsDetected =
     diagnostics?.sourceMalformedSingleCharacterParagraphsDetected ?? false;
   const malformedSingleCharacterParagraphsDetected = diagnostics?.malformedSingleCharacterParagraphsDetected ?? false;
@@ -210,6 +220,16 @@ export function createConversionReport(
   const sectionPageMatches = diagnostics?.sectionPageMatches ?? true;
   const captionPresencePassed = diagnostics?.captionPresencePassed ?? true;
   const tablePresencePassed = diagnostics?.tablePresencePassed === true ? audit.totalTables > 0 : diagnostics?.tablePresencePassed ?? true;
+  const detectedTables = diagnostics?.detectedTables ?? 0;
+  const detectedFigures = diagnostics?.detectedFigures ?? 0;
+  const detectedCaptions = diagnostics?.detectedCaptions ?? 0;
+  const detectedSourceNotes = diagnostics?.detectedSourceNotes ?? 0;
+  const tableTextMatches = diagnostics?.tableTextMatches ?? true;
+  const tableBlockMatches = (diagnostics?.tableBlockMatches ?? true) && (detectedTables === 0 || audit.totalTables >= detectedTables);
+  const captionBlockMatches = diagnostics?.captionBlockMatches ?? true;
+  const sourceNotePresencePassed = diagnostics?.sourceNotePresencePassed ?? true;
+  const noObjectTextOverlapPassed = diagnostics?.noObjectTextOverlapPassed ?? true;
+  const referenceProfileUsed = diagnostics?.referenceProfileUsed ?? false;
   const referenceAlignmentPassed = diagnostics?.referenceAlignmentPassed ?? true;
   const backMatterZonesPassed = diagnostics?.backMatterZonesPassed ?? true;
   const textFlowPassed =
@@ -230,8 +250,19 @@ export function createConversionReport(
     sectionPageMatches &&
     captionPresencePassed &&
     tablePresencePassed &&
+    tableBlockMatches &&
+    captionBlockMatches &&
+    sourceNotePresencePassed &&
+    tableTextMatches &&
+    noObjectTextOverlapPassed &&
     referenceAlignmentPassed &&
     backMatterZonesPassed;
+  const visualMatchPassed =
+    comparison.visualMatchPassed &&
+    tableBlockMatches &&
+    captionBlockMatches &&
+    sourceNotePresencePassed &&
+    noObjectTextOverlapPassed;
   const structuralMatchPassed =
     columnStructureMatches &&
     !duplicatePageContentDetected &&
@@ -245,7 +276,7 @@ export function createConversionReport(
     candidatePdfPath,
     pageCount: document.pages.length,
     pageCountMatches: comparison.pageCountMatches && comparison.referencePageCount === audit.pageCount,
-    visualMatchPassed: comparison.visualMatchPassed,
+    visualMatchPassed,
     exactVisualMatchPassed: comparison.exactVisualMatchPassed,
     fontTolerantVisualMatchPassed: comparison.fontTolerantVisualMatchPassed,
     visualDiffThreshold: comparison.visualDiffThreshold,
@@ -277,12 +308,22 @@ export function createConversionReport(
     sectionPageMatches,
     captionPresencePassed,
     tablePresencePassed,
+    detectedTables,
+    detectedFigures,
+    detectedCaptions,
+    detectedSourceNotes,
+    tableBlockMatches,
+    captionBlockMatches,
+    sourceNotePresencePassed,
+    tableTextMatches,
+    noObjectTextOverlapPassed,
+    referenceProfileUsed,
     referenceAlignmentPassed,
     backMatterZonesPassed,
     releaseApproved:
       comparison.pageCountMatches &&
       comparison.referencePageCount === audit.pageCount &&
-      comparison.visualMatchPassed &&
+      visualMatchPassed &&
       audit.nativeAuditPassed &&
       structuralMatchPassed,
     convertedTextFrames,

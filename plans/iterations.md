@@ -115,3 +115,22 @@ Make `Testfokus.pub` pass the reference-PDF gate without requiring exact font-me
 - `pnpm convert:pub Testfokus.pub` passes with `releaseApproved: true`.
 - `pnpm acceptance:run` passes `testfokus`.
 - Real HTTP upload/poll/result flow completed with `releaseApproved=true`, `visualMatchPassed=true`, `nativeAuditPassed=true`, `totalTables=3`, and `overset=false`.
+
+## Iteration 6: General Reference Block Reconstruction
+### Goal
+Fix the document-wide class of failures where tables, captions, source notes, footnotes, and figure/table exclusion zones could be missing or simplified while broad native/visual gates still passed.
+
+### Done
+- Same-basename reference PDFs now produce a generic reference layout profile; no conversion path branches on the `Testfokus` file name.
+- Detected captions, native tables, source notes, footnotes, and large figure zones are exported as native/editable objects and used as exclusion zones for article text.
+- Acceptance now requires table/caption/source-note block matches and no article/reference text overlap with object zones.
+- The previous three-table placeholder path was replaced by generic block detection; `Testfokus` now reports four detected/native tables.
+
+### Status
+- Complete.
+
+### Evidence
+- `pnpm typecheck` passes.
+- `pnpm convert:pub Testfokus.pub` passes with `releaseApproved=true`, `detectedTables=4`, `totalTables=4`, `tableBlockMatches=true`, `sourceNotePresencePassed=true`, and `noObjectTextOverlapPassed=true`.
+- `pnpm acceptance:run` passes `testfokus`.
+- Real HTTP upload/poll flow completed with `releaseApproved=true`, `visualMatchPassed=true`, `structuralMatchPassed=true`, `nativeAuditPassed=true`, and `referenceProfileUsed=true`.

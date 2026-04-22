@@ -33,6 +33,8 @@
 - [x] Large figures export with native InDesign bounding-box text wrap.
 - [x] `Testfokus` uses a reference-anchored native layout path when its PDF reference is available.
 - [x] Visual comparison is font-tolerant while retaining raw pixel mismatch diagnostics.
+- [x] Reference-PDF block profile detects captions, tables, source notes, footnotes, and object exclusion zones without fixture-name branching.
+- [x] Release approval blocks missing table/caption/source-note text and article text overlapping table or figure zones.
 - [x] Font resolver maps `Palatino Linotype`, `Arial`, and `Times New Roman` to installed InDesign font variants.
 - [x] Temporary file retention and cleanup verified.
 - [x] Run and deploy documentation written.
@@ -47,4 +49,4 @@
 - [x] Adobe/InDesign document-open validation evidence captured.
 
 ## Current Release Call
-- Locally ready and verified against the current acceptance corpus with strict text-flow, cover, footer, back matter, figure-wrap, captions, native tables, reference alignment, section pagination, font-tolerant visual comparison, structural, font, and native-audit gating. Public deployment remains blocked by runtime platform constraints.
+- Locally ready and verified against the current acceptance corpus with strict text-flow, cover, footer, back matter, figure-wrap, generic reference block profile, captions, native tables, source notes, footnotes, no-object-overlap, reference alignment, section pagination, font-tolerant visual comparison, structural, font, and native-audit gating. Public deployment remains blocked by runtime platform constraints.

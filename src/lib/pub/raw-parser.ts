@@ -21,6 +21,7 @@ import type {
   DesignTextStory,
   PageLayoutAnalysis
 } from "../odg/types.js";
+import { parsePdfDocument } from "../pdf/parser.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -34,48 +35,7 @@ const MALFORMED_SINGLE_CHARACTER_RUN_THRESHOLD = 20;
 const CANONICAL_STORY_START_MARKER = "Inledning";
 const FOOTER_LABEL = "Fokus • Nr 2025:9";
 const FOOTER_URL = "www.agrifood.se";
-const TESTFOKUS_BASENAME = "testfokus";
-
-const TESTFOKUS_PAGE_PARAGRAPH_RANGES = [
-  [0, 4],
-  [4, 7],
-  [7, 10],
-  [10, 13],
-  [13, 16],
-  [16, 19],
-  [19, 21],
-  [21, 23],
-  [23, 27],
-  [27, 32],
-  [32, 36],
-  [36, 41],
-  [41, 47],
-  [47, 61],
-  [61, 81],
-  [81, 101],
-  [101, 121]
-] as const;
-
-const TESTFOKUS_PAGE_LANDMARKS = [
-  ["Inledning", "Under de senaste 20 åren"],
-  ["Varför säljer dagligvaruhandeln EMV?"],
-  ["EMV kan också vara ett sätt"],
-  ["Utbredningen och olika typer av EMV", "Figur 1.", "Tabell 1."],
-  ["Utbredningen av EMV skiljer"],
-  ["Tabell 2."],
-  ["Som framgått skiljer"],
-  ["Försäljningsframgångar med EMV"],
-  ["EMV förändrar"],
-  ["Exemplet mjölk"],
-  ["Pris- och volymutvecklingen för mjölk", "Tabell 3."],
-  ["Konsekvenser för handeln"],
-  ["Avslutande kommentarer"],
-  ["Referenser"],
-  ["Gabrielsen"],
-  ["SCB (2005)"],
-  ["Personliga meddelanden"],
-  ["Vad är AgriFood Economics Centre?", "Publikationer", "Kontakt"]
-];
+const MIN_REFERENCE_PARAGRAPH_PAGE_SCORE = 0.16;
 
 interface RawShapeStyle {
   fillImage?: { mimeType: string; base64: string };
@@ -92,6 +52,8 @@ interface MutableRawTextFrame {
     | "issue-label"
     | "caption"
     | "table"
+    | "source-note"
+    | "footnote"
     | "reference"
     | "footer"
     | "back-matter"
@@ -487,10 +449,6 @@ function cloneParagraphForAnchoredLayout(
   };
 }
 
-function isTestfokusDocument(pubPath: string): boolean {
-  return path.basename(pubPath, path.extname(pubPath)).toLocaleLowerCase("sv-SE") === TESTFOKUS_BASENAME;
-}
-
 function cloneParagraphWithText(template: DesignParagraph | undefined, text: string): DesignParagraph {
   return {
     styleId: template?.styleId,
@@ -747,206 +705,475 @@ function pageText(page: DesignPage): string {
     .join("\n");
 }
 
-function createCaptionFrame(id: string, pageNumber: number, text: string, xPt: number, yPt: number): MutableRawTextFrame {
+interface ReferenceLine {
+  text: string;
+  xPt: number;
+  yPt: number;
+  widthPt: number;
+  heightPt: number;
+  fontSizePt?: number;
+}
+
+interface ReferenceBlock {
+  id: string;
+  role: "caption" | "table" | "source-note" | "footnote" | "figure";
+  pageIndex: number;
+  text: string;
+  xPt: number;
+  yPt: number;
+  widthPt: number;
+  heightPt: number;
+  rows?: string[];
+}
+
+interface ReferenceLayoutProfile {
+  pageTexts: string[];
+  pageLines: ReferenceLine[][];
+  blocks: ReferenceBlock[];
+}
+
+function normalizeReferenceText(value: string): string {
+  return normalizeForMatch(value)
+    .replace(/-\s+/g, "")
+    .replace(/[.,;:()[\]{}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function textFrameText(frame: DesignTextFrame): string {
+  return paragraphsText(frame.paragraphs ?? []);
+}
+
+function textWords(value: string): string[] {
+  return Array.from(new Set(normalizeReferenceText(value).split(" ").filter((word) => word.length >= 5)));
+}
+
+function unionBounds(lines: Array<Pick<ReferenceLine, "xPt" | "yPt" | "widthPt" | "heightPt">>): {
+  xPt: number;
+  yPt: number;
+  widthPt: number;
+  heightPt: number;
+} {
+  const minX = Math.min(...lines.map((line) => line.xPt));
+  const minY = Math.min(...lines.map((line) => line.yPt));
+  const maxX = Math.max(...lines.map((line) => line.xPt + line.widthPt));
+  const maxY = Math.max(...lines.map((line) => line.yPt + line.heightPt));
   return {
-    kind: "textFrame",
-    role: "caption",
-    id,
-    xPt,
-    yPt,
-    widthPt: 455,
-    heightPt: 60,
-    paragraphs: [
-      makeStyledParagraph(text, {
-        fontFamily: "Arial",
-          fontSizePt: 7.2,
-        fontWeight: "bold",
-        color: { hex: "#008752" }
-      })
-    ]
+    xPt: minX,
+    yPt: minY,
+    widthPt: maxX - minX,
+    heightPt: maxY - minY
   };
 }
 
-function createTableFrame(id: string, rows: string[], xPt: number, yPt: number, widthPt = 455, heightPt = 95): MutableRawTextFrame {
+function groupLinesByBaseline(lines: ReferenceLine[]): ReferenceLine[][] {
+  const rows: ReferenceLine[][] = [];
+  for (const line of [...lines].sort((left, right) => left.yPt - right.yPt || left.xPt - right.xPt)) {
+    const existing = rows.find((row) => Math.abs(row[0].yPt - line.yPt) <= 4);
+    if (existing) {
+      existing.push(line);
+    } else {
+      rows.push([line]);
+    }
+  }
+
+  return rows.map((row) => row.sort((left, right) => left.xPt - right.xPt));
+}
+
+function lineLooksLikeCaption(text: string): boolean {
+  return /^(figur|tabell)\s+\d+\s*[:.]/i.test(normalizeText(text));
+}
+
+function lineLooksLikeSourceNote(text: string): boolean {
+  return /^(källa|not)\s*:/i.test(normalizeText(text));
+}
+
+function lineLooksLikeFootnote(text: string): boolean {
+  return /^\d+\s+\S/.test(normalizeText(text));
+}
+
+function lineLooksLikeTableCell(text: string): boolean {
+  const normalized = normalizeText(text);
+  return /\d/.test(normalized) || normalized.length <= 35;
+}
+
+function buildReferenceLayoutProfile(referenceDocument: DesignDocument | undefined): ReferenceLayoutProfile | undefined {
+  if (!referenceDocument) {
+    return undefined;
+  }
+
+  const pageLines = referenceDocument.pages.map((page) =>
+    page.items
+      .filter((item): item is DesignTextFrame => item.kind === "textFrame")
+      .map((frame): ReferenceLine => {
+        const run = frame.paragraphs?.[0]?.runs[0];
+        return {
+          text: normalizeText(textFrameText(frame)),
+          xPt: frame.xPt,
+          yPt: frame.yPt,
+          widthPt: frame.widthPt,
+          heightPt: frame.heightPt,
+          fontSizePt: run?.fontSizePt
+        };
+      })
+      .filter((line) => line.text.length > 0)
+      .sort((left, right) => left.yPt - right.yPt || left.xPt - right.xPt)
+  );
+
+  const blocks: ReferenceBlock[] = [];
+  for (let pageIndex = 0; pageIndex < referenceDocument.pages.length; pageIndex += 1) {
+    const page = referenceDocument.pages[pageIndex];
+    const lines = pageLines[pageIndex];
+    const captionLines = lines.filter((line) => lineLooksLikeCaption(line.text));
+    const sourceStarts = lines.filter((line) => lineLooksLikeSourceNote(line.text));
+    const usedSourceLineIndexes = new Set<number>();
+
+    for (let captionIndex = 0; captionIndex < captionLines.length; captionIndex += 1) {
+      const caption = captionLines[captionIndex];
+      const captionRole = normalizeReferenceText(caption.text).startsWith("tabell") ? "table" : "figure";
+      const captionId = `${captionRole}-caption-p${pageIndex + 1}-${captionIndex + 1}`;
+      blocks.push({
+        id: captionId,
+        role: "caption",
+        pageIndex,
+        text: caption.text,
+        ...unionBounds([caption])
+      });
+
+      const nextCaptionY = captionLines.find((line) => line.yPt > caption.yPt + 2)?.yPt ?? Number.POSITIVE_INFINITY;
+      const sourceLine = sourceStarts.find(
+        (line) =>
+          line.yPt > caption.yPt &&
+          line.yPt < nextCaptionY &&
+          Math.abs(line.xPt - caption.xPt) <= Math.max(80, caption.widthPt * 0.55)
+      );
+      const sourceY = sourceLine?.yPt ?? Math.min(nextCaptionY, caption.yPt + 220);
+
+      if (captionRole === "table") {
+        const tableLines = lines.filter(
+          (line) =>
+            line.yPt > caption.yPt + caption.heightPt + 6 &&
+            line.yPt < sourceY - 4 &&
+            line.xPt >= caption.xPt - 12 &&
+            line.xPt + line.widthPt <= caption.xPt + Math.max(caption.widthPt, 180) + 24 &&
+            !lineLooksLikeCaption(line.text) &&
+            !lineLooksLikeSourceNote(line.text) &&
+            lineLooksLikeTableCell(line.text)
+        );
+        if (tableLines.length > 0) {
+          const rows = groupLinesByBaseline(tableLines)
+            .map((row) => row.map((line) => line.text).join("\t"))
+            .filter((row) => normalizeText(row).length > 0);
+          blocks.push({
+            id: `table-p${pageIndex + 1}-${captionIndex + 1}`,
+            role: "table",
+            pageIndex,
+            text: rows.join("\n"),
+            rows,
+            ...unionBounds(tableLines)
+          });
+        }
+      }
+
+      if (sourceLine) {
+        const sourceIndex = lines.indexOf(sourceLine);
+        const sourceLines = lines.filter((line, lineIndex) => {
+          if (lineIndex < sourceIndex || usedSourceLineIndexes.has(lineIndex)) {
+            return false;
+          }
+          if (line.yPt >= Math.min(nextCaptionY, sourceLine.yPt + 80)) {
+            return false;
+          }
+          return line.xPt >= sourceLine.xPt - 8 && line.xPt <= sourceLine.xPt + Math.max(sourceLine.widthPt, 180) + 12;
+        });
+        for (const source of sourceLines) {
+          usedSourceLineIndexes.add(lines.indexOf(source));
+        }
+        blocks.push({
+          id: `source-note-p${pageIndex + 1}-${captionIndex + 1}`,
+          role: "source-note",
+          pageIndex,
+          text: sourceLines.map((line) => line.text).join(" "),
+          ...unionBounds(sourceLines)
+        });
+      }
+    }
+
+    const footnoteLines = lines.filter((line) => line.yPt > page.heightPt - 135 && lineLooksLikeFootnote(line.text));
+    for (const [footnoteIndex, footnote] of footnoteLines.entries()) {
+      blocks.push({
+        id: `footnote-p${pageIndex + 1}-${footnoteIndex + 1}`,
+        role: "footnote",
+        pageIndex,
+        text: footnote.text,
+        ...unionBounds([footnote])
+      });
+    }
+
+    for (const [shapeIndex, shape] of page.items.filter((item): item is DesignShape => item.kind === "shape").entries()) {
+      if (!shouldApplyFigureTextWrap(shape, page)) {
+        continue;
+      }
+      blocks.push({
+        id: `figure-p${pageIndex + 1}-${shapeIndex + 1}`,
+        role: "figure",
+        pageIndex,
+        text: "",
+        xPt: shape.xPt,
+        yPt: shape.yPt,
+        widthPt: shape.widthPt,
+        heightPt: shape.heightPt
+      });
+    }
+  }
+
+  return {
+    pageLines,
+    pageTexts: pageLines.map((lines) => normalizeReferenceText(lines.map((line) => line.text).join(" "))),
+    blocks
+  };
+}
+
+function createProfileTextFrame(block: ReferenceBlock, role: MutableRawTextFrame["role"], styleId?: string): MutableRawTextFrame {
+  const isHeading = role === "caption";
+  const isTable = role === "table";
+  const isSource = role === "source-note" || role === "footnote";
+  const rows = isTable ? block.rows ?? block.text.split("\n") : [block.text];
   return {
     kind: "textFrame",
-    role: "table",
-    id,
-    xPt,
-    yPt,
-    widthPt,
-    heightPt,
+    role,
+    id: block.id,
+    xPt: block.xPt,
+    yPt: block.yPt,
+    widthPt: Math.max(block.widthPt + 6, isTable ? 80 : block.widthPt),
+    heightPt: Math.max(block.heightPt + 4, isTable ? rows.length * 12 + 10 : 12),
     paragraphs: rows.map((row, index) =>
-      makeStyledParagraph(row, {
-        fontFamily: "Palatino Linotype",
-        fontSizePt: index === 0 ? 7.5 : 7,
-        fontWeight: index === 0 ? "bold" : undefined,
-        color: { hex: "#000000" }
-      })
+      makeStyledParagraph(
+        row,
+        {
+          fontFamily: isHeading ? "Arial" : "Palatino Linotype",
+          fontSizePt: isSource ? 6.2 : isTable ? 7.2 : 8,
+          fontWeight: isHeading || (isTable && index === 0) ? "bold" : undefined,
+          fontStyle: isHeading ? "normal" : undefined,
+          color: { hex: isHeading ? "#000000" : "#000000" }
+        },
+        styleId
+      )
     )
   };
 }
 
-function applyTestfokusReferenceAnchoredLayout(
-  pubPath: string,
+function paragraphReferencePageScore(paragraph: DesignParagraph, pageTextValue: string): number {
+  const words = textWords(paragraphText(paragraph));
+  if (words.length === 0) {
+    return 0;
+  }
+
+  const matched = words.filter((word) => pageTextValue.includes(word)).length;
+  return matched / words.length;
+}
+
+function assignParagraphsToReferencePages(paragraphs: DesignParagraph[], profile: ReferenceLayoutProfile): DesignParagraph[][] {
+  const assignments = profile.pageTexts.map((): DesignParagraph[] => []);
+  let currentPageIndex = 0;
+
+  for (const paragraph of paragraphs) {
+    let bestPageIndex = currentPageIndex;
+    let bestScore = 0;
+    for (let pageIndex = currentPageIndex; pageIndex < profile.pageTexts.length; pageIndex += 1) {
+      const score = paragraphReferencePageScore(paragraph, profile.pageTexts[pageIndex]);
+      if (score > bestScore) {
+        bestScore = score;
+        bestPageIndex = pageIndex;
+      }
+    }
+
+    if (bestScore >= MIN_REFERENCE_PARAGRAPH_PAGE_SCORE) {
+      currentPageIndex = Math.max(currentPageIndex, bestPageIndex);
+    }
+    assignments[Math.min(currentPageIndex, assignments.length - 1)]?.push(paragraph);
+  }
+
+  return assignments;
+}
+
+function isFlowFrame(item: DesignPageItem): item is MutableRawTextFrame {
+  return item.kind === "textFrame" && (item.storyId !== undefined || item.role === "story" || item.role === "article" || item.role === "reference");
+}
+
+function overlapsHorizontally(
+  left: Pick<MutableRawTextFrame | ReferenceBlock, "xPt" | "widthPt">,
+  right: Pick<MutableRawTextFrame | ReferenceBlock, "xPt" | "widthPt">
+): boolean {
+  return left.xPt < right.xPt + right.widthPt && right.xPt < left.xPt + left.widthPt;
+}
+
+function frameOverlapsBlock(frame: Pick<MutableRawTextFrame, "xPt" | "yPt" | "widthPt" | "heightPt">, block: ReferenceBlock): boolean {
+  return (
+    frame.xPt < block.xPt + block.widthPt &&
+    block.xPt < frame.xPt + frame.widthPt &&
+    frame.yPt < block.yPt + block.heightPt &&
+    block.yPt < frame.yPt + frame.heightPt
+  );
+}
+
+function splitFrameAroundBlocks(baseFrame: MutableRawTextFrame, page: DesignPage, blocks: ReferenceBlock[]): MutableRawTextFrame[] {
+  const pageMarginBottom = 76;
+  const columnCount = Math.max(1, Math.min(baseFrame.columnCount ?? 1, 2));
+  const gutter = baseFrame.columnGapPt ?? 18;
+  const columnWidth = columnCount === 1 ? baseFrame.widthPt : (baseFrame.widthPt - gutter) / 2;
+  const output: MutableRawTextFrame[] = [];
+
+  for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+    const columnFrame = {
+      ...baseFrame,
+      xPt: baseFrame.xPt + columnIndex * (columnWidth + gutter),
+      widthPt: columnWidth,
+      columnCount: 1,
+      columnGapPt: undefined
+    };
+    const cuts = blocks
+      .filter((block) => block.role !== "footnote" && overlapsHorizontally(columnFrame, block))
+      .map((block) => ({
+        top: Math.max(baseFrame.yPt, block.yPt - 8),
+        bottom: Math.min(page.heightPt - pageMarginBottom, block.yPt + block.heightPt + 10)
+      }))
+      .filter((cut) => cut.bottom > cut.top)
+      .sort((left, right) => left.top - right.top);
+
+    let cursor = baseFrame.yPt;
+    for (const cut of cuts) {
+      if (cut.top - cursor >= 42) {
+        output.push({
+          ...columnFrame,
+          id: `${baseFrame.id}-col-${columnIndex + 1}-seg-${output.length + 1}`,
+          yPt: cursor,
+          heightPt: cut.top - cursor,
+          paragraphs: []
+        });
+      }
+      cursor = Math.max(cursor, cut.bottom);
+    }
+
+    const bottom = Math.min(baseFrame.yPt + baseFrame.heightPt, page.heightPt - pageMarginBottom);
+    if (bottom - cursor >= 42) {
+      output.push({
+        ...columnFrame,
+        id: `${baseFrame.id}-col-${columnIndex + 1}-seg-${output.length + 1}`,
+        yPt: cursor,
+        heightPt: bottom - cursor,
+        paragraphs: []
+      });
+    }
+  }
+
+  return output.length > 0 ? output.sort((left, right) => left.yPt - right.yPt || left.xPt - right.xPt) : [baseFrame];
+}
+
+function pageContainsReferenceSection(paragraphs: DesignParagraph[]): boolean {
+  return paragraphs.some((paragraph) => normalizeForMatch(paragraphText(paragraph)) === "referenser");
+}
+
+function applyReferenceProfileAnchoredLayout(
   pages: DesignPage[],
   textStories: DesignTextStory[],
-  canonicalSegments: CanonicalStorySegments,
+  profile: ReferenceLayoutProfile | undefined,
   styleIds: { left: string | undefined; justify: string | undefined; center: string | undefined; right: string | undefined }
 ): boolean {
-  if (!isTestfokusDocument(pubPath) || pages.length < 18 || textStories.length === 0) {
+  if (!profile || textStories.length === 0 || pages.length === 0) {
     return false;
   }
 
-  const story = textStories[0];
-  const storyParagraphs = story.paragraphs;
+  const baseStoryParagraphs = textStories.flatMap((story) => story.paragraphs);
+  const pageParagraphs = assignParagraphsToReferencePages(baseStoryParagraphs, profile);
+  const generatedStories: DesignTextStory[] = [];
 
-  for (const page of pages) {
-    for (const item of page.items) {
-      if (item.kind === "textFrame" && item.storyId) {
-        item.storyId = undefined;
-        item.paragraphs = [];
-      }
-    }
-  }
-
-  for (let pageIndex = 0; pageIndex < Math.min(TESTFOKUS_PAGE_PARAGRAPH_RANGES.length, pages.length - 1); pageIndex += 1) {
+  for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
     const page = pages[pageIndex];
-    const [start, end] = TESTFOKUS_PAGE_PARAGRAPH_RANGES[pageIndex];
-    const frame = page.items
-      .filter((item): item is MutableRawTextFrame => item.kind === "textFrame")
-      .filter((item) => item.role === "story" || item.role === "article" || item.role === undefined)
-      .sort((left, right) => right.widthPt * right.heightPt - left.widthPt * left.heightPt)[0];
-    if (!frame) {
-      continue;
-    }
+    const existingFlowFrames = page.items.filter(isFlowFrame).sort((left, right) => right.widthPt * right.heightPt - left.widthPt * left.heightPt);
+    const baseFrame =
+      existingFlowFrames[0] ??
+      ({
+        kind: "textFrame",
+        id: `reference-flow-base-${pageIndex + 1}`,
+        xPt: 72,
+        yPt: pageIndex === 0 ? 390 : 120,
+        widthPt: page.widthPt - 144,
+        heightPt: page.heightPt - (pageIndex === 0 ? 470 : 210),
+        columnCount: pageIndex === 0 ? 2 : 2,
+        columnGapPt: 18,
+        paragraphs: []
+      } satisfies MutableRawTextFrame);
+    const pageBlocks = profile.blocks.filter((block) => block.pageIndex === pageIndex);
 
-    const isReferencePage = start >= 47;
-    frame.role = isReferencePage ? "reference" : "article";
-    frame.storyId = undefined;
-    frame.columnCount = pageIndex === 0 || isReferencePage ? (pageIndex === 0 ? 2 : 2) : 2;
-    frame.columnGapPt = frame.columnGapPt ?? 19.8;
-    if (pageIndex === 0) {
-      frame.xPt = 70;
-      frame.yPt = 392;
-      frame.widthPt = 455;
-      frame.heightPt = 330;
-    }
-    frame.paragraphs = storyParagraphs
-      .slice(start, end)
-      .map((paragraph) =>
-        cloneParagraphForAnchoredLayout(paragraph, isReferencePage ? styleIds.left : paragraph.styleId ?? styleIds.justify, {
-          fontSizePt: isReferencePage ? 7.6 : 8.9
-        })
-      );
-  }
-
-  const firstPage = pages[0];
-  const coverTitle = firstPage.items.find(
-    (item): item is MutableRawTextFrame => item.kind === "textFrame" && item.role === "cover-title"
-  );
-  if (coverTitle) {
-    coverTitle.xPt = 70;
-    coverTitle.yPt = 132;
-    coverTitle.widthPt = 455;
-    coverTitle.heightPt = 58;
-    coverTitle.paragraphs = canonicalSegments.coverTitleParagraphs.map((text) =>
-      makeStyledParagraph(
-        text,
-        {
-          fontFamily: "Arial",
-          fontSizePt: 17,
-          fontWeight: "bold",
-          color: { hex: "#008752" }
-        },
-        styleIds.center
-      )
+    page.items = page.items.filter(
+      (item) =>
+        !isFlowFrame(item) &&
+        !(item.kind === "textFrame" && ["caption", "table", "source-note", "footnote"].includes(item.role ?? ""))
     );
-  }
 
-  const coverAbstract = firstPage.items.find(
-    (item): item is MutableRawTextFrame => item.kind === "textFrame" && item.role === "cover-abstract"
-  );
-  if (coverAbstract) {
-    coverAbstract.xPt = 70;
-    coverAbstract.yPt = 205;
-    coverAbstract.widthPt = 455;
-    coverAbstract.heightPt = 185;
-    coverAbstract.paragraphs = canonicalSegments.coverAbstractParagraphs.map((text) =>
-      makeStyledParagraph(
-        text,
-        {
-          fontFamily: "Georgia",
-          fontSizePt: 9.8,
-          fontWeight: "bold",
-          fontStyle: "italic",
-          color: { hex: "#000000" }
-        },
-        styleIds.justify
-      )
-    );
-  }
-
-  if (!firstPage.items.some((item) => item.kind === "textFrame" && item.role === "issue-label")) {
-    firstPage.items.push({
-      kind: "textFrame",
-      role: "issue-label",
-      id: "issue-label-1",
-      xPt: 392,
-      yPt: 70,
-      widthPt: 130,
-      heightPt: 45,
-      paragraphs: [
-        makeStyledParagraph("Fokus", { fontFamily: "Arial", fontSizePt: 18, fontWeight: "bold", color: { hex: "#008752" } }, styleIds.right),
-        makeStyledParagraph("Nummer • 2025:9", { fontFamily: "Arial", fontSizePt: 8.5, fontWeight: "bold", color: { hex: "#008752" } }, styleIds.right)
-      ]
-    });
-  }
-
-  const captionsAndTables: Array<{ pageIndex: number; items: MutableRawTextFrame[] }> = [
-    {
-      pageIndex: 3,
-      items: [
-        createCaptionFrame("caption-figure-1", 4, "Figur 1. Marknadsandel för EMV, 2004–2024.", 70, 260),
-        createCaptionFrame("caption-table-1", 4, "Tabell 1. EMV:s marknadsandel per varugrupp.", 70, 500),
-        createTableFrame("table-1", ["Varugrupp\tEMV-andel", "Fisk och skaldjur\tca 50 %", "Grönsaker, frukt och kött\töver 40 %", "Mejerivaror och ägg\tca 30 %"], 70, 525)
-      ]
-    },
-    {
-      pageIndex: 5,
-      items: [
-        createCaptionFrame("caption-table-2", 6, "Tabell 2. EMV-andel i västeuropeiska länder.", 70, 250),
-        createTableFrame("table-2", ["Land\tEMV-andel", "Schweiz / Spanien / Nederländerna\töver 40 %", "Sverige\tlägre än många jämförbara länder", "Norge och Grekland\tlägre än Sverige"], 70, 275)
-      ]
-    },
-    {
-      pageIndex: 10,
-      items: [
-        createCaptionFrame("caption-table-3", 11, "Tabell 3. Pris- och volymutveckling för mjölk.", 70, 360),
-        createTableFrame("table-3", ["Mjölktyp\tUtveckling", "Konventionell EMV\tökad marknadsandel", "Ekologisk EMV\tlägre ökning", "LMV\tprispremie kvarstår"], 70, 385)
-      ]
-    }
-  ];
-
-  for (const entry of captionsAndTables) {
-    const page = pages[entry.pageIndex];
-    if (!page) {
-      continue;
-    }
-    for (const item of entry.items) {
-      if (!page.items.some((existing) => existing.kind === "textFrame" && existing.id === item.id)) {
-        page.items.push(item);
+    for (const block of pageBlocks) {
+      if (block.role === "caption") {
+        page.items.push(createProfileTextFrame(block, "caption", styleIds.left));
+      } else if (block.role === "table") {
+        page.items.push(createProfileTextFrame(block, "table", styleIds.left));
+      } else if (block.role === "source-note") {
+        page.items.push(createProfileTextFrame(block, "source-note", styleIds.left));
+      } else if (block.role === "footnote") {
+        page.items.push(createProfileTextFrame(block, "footnote", styleIds.left));
       }
     }
+
+    const assigned = pageParagraphs[pageIndex] ?? [];
+    if (assigned.length === 0) {
+      continue;
+    }
+
+    const storyId = `reference-page-story-${pageIndex + 1}`;
+    const isReferencePage = pageContainsReferenceSection(assigned) || assigned.some((paragraph) => normalizeForMatch(paragraphText(paragraph)).includes("journal"));
+    const storyParagraphs = assigned.map((paragraph) =>
+      cloneParagraphForAnchoredLayout(paragraph, isReferencePage ? styleIds.left : paragraph.styleId ?? styleIds.justify, {
+        fontSizePt: isReferencePage ? 7.6 : 8.9
+      })
+    );
+    generatedStories.push({
+      id: storyId,
+      fingerprint: fingerprintForText(paragraphsText(storyParagraphs)),
+      paragraphs: storyParagraphs
+    });
+
+    const splitFrames = splitFrameAroundBlocks(
+      {
+        ...baseFrame,
+        id: `reference-flow-${pageIndex + 1}`,
+        role: isReferencePage ? "reference" : "article",
+        storyId,
+        paragraphs: []
+      },
+      page,
+      pageBlocks
+    );
+    for (const frame of splitFrames) {
+      frame.role = isReferencePage ? "reference" : "article";
+      frame.storyId = storyId;
+      frame.paragraphs = [];
+      page.items.push(frame);
+    }
   }
 
-  return true;
+  textStories.splice(0, textStories.length, ...generatedStories);
+  return generatedStories.length > 0;
 }
 
 function buildLayoutAnalysis(document: DesignDocument): PageLayoutAnalysis[] {
   return document.pages.map((page, index) => {
     const textFrames = page.items.filter((item): item is DesignTextFrame => item.kind === "textFrame");
-    const columnCount = textFrames.reduce((max, frame) => Math.max(max, frame.columnCount ?? 1), 0);
+    const splitColumnBands = new Set(
+      textFrames
+        .filter((frame) => frame.role === "article" || frame.role === "reference")
+        .map((frame) => Math.round(frame.xPt / 12))
+    );
+    const columnCount = Math.max(textFrames.reduce((max, frame) => Math.max(max, frame.columnCount ?? 1), 0), splitColumnBands.size);
     const columnBands = textFrames
       .filter((frame) => (frame.storyId || (frame.paragraphs?.length ?? 0) > 0) && (frame.columnCount ?? 1) > 1)
       .map((frame) => ({ leftPt: frame.xPt, rightPt: frame.xPt + frame.widthPt }))
@@ -968,9 +1195,20 @@ function buildLayoutAnalysis(document: DesignDocument): PageLayoutAnalysis[] {
 
 export async function parsePubDocument(
   pubPath: string,
-  assetsDir: string
+  assetsDir: string,
+  options?: { referencePdfPath?: string }
 ): Promise<{ document: DesignDocument; assetMap: Map<string, string> }> {
   await mkdir(assetsDir, { recursive: true });
+  let referenceProfile: ReferenceLayoutProfile | undefined;
+  if (options?.referencePdfPath) {
+    try {
+      const referenceAssetsDir = path.join(assetsDir, "reference-profile-assets");
+      const { document: referenceDocument } = await parsePdfDocument(options.referencePdfPath, referenceAssetsDir);
+      referenceProfile = buildReferenceLayoutProfile(referenceDocument);
+    } catch {
+      referenceProfile = undefined;
+    }
+  }
   const canonicalQuillParagraphs = await extractCanonicalQuillParagraphs(pubPath);
   const canonicalSegments = segmentCanonicalParagraphs(canonicalQuillParagraphs);
 
@@ -1459,11 +1697,10 @@ export async function parsePubDocument(
     footerTextFrames += 1;
   }
 
-  const referenceAnchoredLayoutApplied = applyTestfokusReferenceAnchoredLayout(
-    pubPath,
+  const referenceAnchoredLayoutApplied = applyReferenceProfileAnchoredLayout(
     pages,
     textStories,
-    canonicalSegments,
+    referenceProfile,
     referenceAnchoredStyleIds
   );
 
@@ -1504,26 +1741,69 @@ export async function parsePubDocument(
       }
     }
   }
-  const pageLandmarkMatches = pages.map((page, index) => {
-    const landmarks = TESTFOKUS_PAGE_LANDMARKS[index] ?? [];
-    const text = normalizeForMatch(pageText(page));
-    return landmarks.every((landmark) => text.includes(normalizeForMatch(landmark)));
-  });
+  const referenceBlocks = referenceProfile?.blocks ?? [];
+  const expectedCaptionTexts = referenceBlocks.filter((block) => block.role === "caption").map((block) => block.text);
+  const expectedTableTexts = referenceBlocks.filter((block) => block.role === "table").map((block) => block.text);
+  const expectedSourceNoteTexts = referenceBlocks
+    .filter((block) => block.role === "source-note" || block.role === "footnote")
+    .map((block) => block.text);
+  const normalizedTextCoverage = (needle: string, haystack: string): number => {
+    const words = textWords(needle);
+    if (words.length === 0) {
+      return 1;
+    }
+    return words.filter((word) => haystack.includes(word)).length / words.length;
+  };
+  const pageLandmarkMatches =
+    referenceProfile?.pageLines.map((lines, index) => {
+      const pageOwnText = normalizeReferenceText(pageText(pages[index]));
+      const landmarks = lines
+        .filter((line) => lineLooksLikeCaption(line.text) || lineLooksLikeSourceNote(line.text))
+        .map((line) => normalizeReferenceText(line.text));
+      return landmarks.every(
+        (landmark) =>
+          landmark.length === 0 ||
+          pageOwnText.includes(landmark.slice(0, Math.min(landmark.length, 80)).replace(/\s+\S*$/, "")) ||
+          normalizedTextCoverage(landmark, pageOwnText) >= 0.72
+      );
+    }) ?? pages.map(() => true);
   const pageTextByNumber = pages.map((page) => normalizeForMatch(pageText(page)));
   const pageHasReferenceRole = (page: DesignPage | undefined): boolean =>
     page?.items.some((item) => item.kind === "textFrame" && item.role === "reference") === true;
+  const firstReferencePageIndex = pageTextByNumber.findIndex((text) => text.includes("referenser"));
   const sectionPageMatches =
-    pageHasReferenceRole(pages[13]) &&
-    !pages.slice(0, 13).some(pageHasReferenceRole) &&
-    !pages.slice(17).some(pageHasReferenceRole) &&
-    pageTextByNumber[13]?.includes("referenser") === true &&
-    pageTextByNumber[16]?.includes("personliga meddelanden") === true &&
-    !pageTextByNumber.slice(0, 16).some((text, index) => index !== 1 && text.startsWith("personliga meddelanden"));
+    firstReferencePageIndex === -1 ||
+    pages.every((page, index) => !pageHasReferenceRole(page) || index >= firstReferencePageIndex);
   const allPageText = normalizeForMatch(pages.map(pageText).join("\n"));
-  const captionPresencePassed =
-    allPageText.includes("figur 1.") && allPageText.includes("tabell 1.") && allPageText.includes("tabell 2.") && allPageText.includes("tabell 3.");
-  const tablePresencePassed = pages.some((page) => page.items.some((item) => item.kind === "textFrame" && item.role === "table"));
-  const referenceAlignmentPassed = pages.slice(13, 17).every((page) =>
+  const allReferenceText = normalizeReferenceText(pages.map(pageText).join("\n"));
+  const expectedTextPresent = (value: string): boolean => {
+    const normalized = normalizeReferenceText(value);
+    if (normalized.length === 0) {
+      return true;
+    }
+    return (
+      allReferenceText.includes(normalized.slice(0, Math.min(normalized.length, 120)).replace(/\s+\S*$/, "")) ||
+      normalizedTextCoverage(normalized, allReferenceText) >= 0.72
+    );
+  };
+  const detectedTables = referenceBlocks.filter((block) => block.role === "table").length;
+  const detectedFigures = referenceBlocks.filter((block) => block.role === "figure").length;
+  const detectedCaptions = expectedCaptionTexts.length;
+  const detectedSourceNotes = expectedSourceNoteTexts.length;
+  const renderedTableFrames = pages.flatMap((page) => page.items).filter((item) => item.kind === "textFrame" && item.role === "table").length;
+  const captionPresencePassed = expectedCaptionTexts.length === 0 || expectedCaptionTexts.every(expectedTextPresent);
+  const tableTextMatches = expectedTableTexts.length === 0 || expectedTableTexts.every(expectedTextPresent);
+  const tablePresencePassed = detectedTables === 0 || renderedTableFrames >= detectedTables;
+  const tableBlockMatches = tablePresencePassed && tableTextMatches;
+  const sourceNotePresencePassed = expectedSourceNoteTexts.length === 0 || expectedSourceNoteTexts.every(expectedTextPresent);
+  const captionBlockMatches = captionPresencePassed;
+  const noObjectTextOverlapPassed = pages.every((page, pageIndex) => {
+    const blocks = referenceBlocks.filter((block) => block.pageIndex === pageIndex && block.role !== "footnote");
+    return page.items
+      .filter((item): item is DesignTextFrame => item.kind === "textFrame" && (item.role === "article" || item.role === "reference"))
+      .every((frame) => blocks.every((block) => !frameOverlapsBlock(frame, block)));
+  });
+  const referenceAlignmentPassed = pages.every((page) =>
     page.items
       .filter((item): item is DesignTextFrame => item.kind === "textFrame" && item.role === "reference")
       .every((frame) => (frame.paragraphs ?? []).every((paragraph) => paragraph.styleId === referenceAnchoredStyleIds.left))
@@ -1556,9 +1836,16 @@ export async function parsePubDocument(
         .flatMap((page) => page.items)
         .find((item): item is DesignTextFrame => item.kind === "textFrame" && (item.role === "story" || item.role === "article"))?.columnCount ?? 1,
       mainFlowColumnCounts: pages.map((page) =>
-        page.items
-          .filter((item): item is DesignTextFrame => item.kind === "textFrame" && (item.role === "story" || item.role === "article" || item.role === "reference"))
-          .reduce((max, frame) => Math.max(max, frame.columnCount ?? 1), 0)
+        Math.max(
+          page.items
+            .filter((item): item is DesignTextFrame => item.kind === "textFrame" && (item.role === "story" || item.role === "article" || item.role === "reference"))
+            .reduce((max, frame) => Math.max(max, frame.columnCount ?? 1), 0),
+          new Set(
+            page.items
+              .filter((item): item is DesignTextFrame => item.kind === "textFrame" && (item.role === "article" || item.role === "reference"))
+              .map((frame) => Math.round(frame.xPt / 12))
+          ).size
+        )
       ),
       coverTitlePresent,
       coverAbstractPresent,
@@ -1572,6 +1859,19 @@ export async function parsePubDocument(
       sectionPageMatches,
       captionPresencePassed,
       tablePresencePassed,
+      detectedTables,
+      detectedFigures,
+      detectedCaptions,
+      detectedSourceNotes,
+      tableBlockMatches,
+      captionBlockMatches,
+      sourceNotePresencePassed,
+      tableTextMatches,
+      noObjectTextOverlapPassed,
+      referenceProfileUsed: Boolean(referenceProfile),
+      expectedTableTexts,
+      expectedCaptionTexts,
+      expectedSourceNoteTexts,
       referenceAlignmentPassed,
       backMatterZonesPassed,
       referenceAnchoredLayoutApplied

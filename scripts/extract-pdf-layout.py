@@ -56,10 +56,16 @@ def save_image_block(page_number, block_number, block, assets_dir):
     file_path = os.path.join(assets_dir, file_name)
 
     if mask_bytes:
-        base_pixmap = fitz.Pixmap(image_bytes)
-        mask_pixmap = fitz.Pixmap(mask_bytes)
-        composed_pixmap = fitz.Pixmap(base_pixmap, mask_pixmap)
-        composed_pixmap.save(file_path)
+        try:
+            base_pixmap = fitz.Pixmap(image_bytes)
+            mask_pixmap = fitz.Pixmap(mask_bytes)
+            if base_pixmap.alpha:
+                base_pixmap = fitz.Pixmap(base_pixmap, 0)
+            composed_pixmap = fitz.Pixmap(base_pixmap, mask_pixmap)
+            composed_pixmap.save(file_path)
+        except Exception:
+            with open(file_path, "wb") as handle:
+                handle.write(image_bytes)
     else:
         with open(file_path, "wb") as handle:
             handle.write(image_bytes)

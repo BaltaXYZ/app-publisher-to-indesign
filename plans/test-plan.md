@@ -24,9 +24,10 @@
 - The HTTP API flow has been exercised end-to-end with upload, polling, report, and result download.
 - `pnpm convert:pub Testfokus.pub` passes with `releaseApproved: true`, `malformedSingleCharacterParagraphsDetected: false`, `footerTextPresent: true`, `oversetText: false`, and no font issues.
 - `pnpm convert:pub Testfokus.pub` uses the same-basename `Testfokus.pdf` reference and passes cover, footer URL/page, misplaced back matter, and text-wrap gates.
+- `pnpm convert:pub Testfokus.pub` detects generic reference blocks with `detectedTables: 4`, native `totalTables: 4`, `tableBlockMatches: true`, `captionBlockMatches: true`, `sourceNotePresencePassed: true`, and `noObjectTextOverlapPassed: true`.
 - `pnpm acceptance:run` passes `testfokus`.
-- A real local HTTP job for `Testfokus.pub` completes with `releaseApproved: true`, `coverTitlePresent: true`, `coverAbstractPresent: true`, `footerPageAndUrlPresent: true`, `textWrapPassed: true`, and a downloadable `IDML`.
+- A real local HTTP job for `Testfokus.pub` completes with `releaseApproved: true`, `visualMatchPassed: true`, `structuralMatchPassed: true`, `nativeAuditPassed: true`, `referenceProfileUsed: true`, and a downloadable `IDML`.
 
 ## Current Gaps
 - Public cloud deployment for the conversion runtime is unresolved.
-- Polygon fidelity and semantic table import are still partial.
+- Polygon fidelity is still partial.

@@ -58,6 +58,8 @@ export interface DesignTextFrame {
     | "issue-label"
     | "caption"
     | "table"
+    | "source-note"
+    | "footnote"
     | "reference"
     | "footer"
     | "back-matter"
@@ -149,6 +151,19 @@ export interface DesignDocument {
     sectionPageMatches?: boolean;
     captionPresencePassed?: boolean;
     tablePresencePassed?: boolean;
+    detectedTables?: number;
+    detectedFigures?: number;
+    detectedCaptions?: number;
+    detectedSourceNotes?: number;
+    tableBlockMatches?: boolean;
+    captionBlockMatches?: boolean;
+    sourceNotePresencePassed?: boolean;
+    tableTextMatches?: boolean;
+    noObjectTextOverlapPassed?: boolean;
+    referenceProfileUsed?: boolean;
+    expectedTableTexts?: string[];
+    expectedCaptionTexts?: string[];
+    expectedSourceNoteTexts?: string[];
     referenceAlignmentPassed?: boolean;
     backMatterZonesPassed?: boolean;
     referenceAnchoredLayoutApplied?: boolean;

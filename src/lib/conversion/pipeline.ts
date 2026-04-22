@@ -72,7 +72,7 @@ export async function runConversionPipeline(
     ? (await mkdir(referenceDir, { recursive: true }), await copyFile(sourceReferencePdfPath, generatedReferencePdfPath), generatedReferencePdfPath)
     : await convertPubToPdf(pubPath, referenceDir);
   const assetsDir = path.join(outputRoot, "assets");
-  const { document, assetMap } = await parsePubDocument(pubPath, assetsDir);
+  const { document, assetMap } = await parsePubDocument(pubPath, assetsDir, { referencePdfPath });
   const modelPath = path.join(outputRoot, "model", `${baseName}.model.json`);
 
   await mkdir(path.dirname(modelPath), { recursive: true });
@@ -119,6 +119,10 @@ export async function runConversionPipeline(
       !report.sectionPageMatches ? "sektioner hamnar på fel sidor" : null,
       !report.captionPresencePassed ? "figur- eller tabellrubriker saknas" : null,
       !report.tablePresencePassed ? "tabeller saknas eller är inte native" : null,
+      !report.tableBlockMatches ? "upptäckta tabellblock matchar inte referensen" : null,
+      !report.captionBlockMatches ? "upptäckta figur- eller tabellrubriker matchar inte referensen" : null,
+      !report.sourceNotePresencePassed ? "källrader eller fotnoter saknas" : null,
+      !report.noObjectTextOverlapPassed ? "text överlappar tabell-, figur- eller källzoner" : null,
       !report.referenceAlignmentPassed ? "referensdelen är inte vänsterjusterad" : null,
       !report.backMatterZonesPassed ? "baksidestextens zoner matchar inte referensen" : null,
       report.exportedCanonicalTextCoverage < 0.98 ? "kanonisk Publisher-text saknas i exporterad PDF" : null,

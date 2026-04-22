@@ -25,11 +25,12 @@
 - [x] Style normalization and deduplication.
 - [x] Swatches and color handling.
 - [x] Quality report generation.
+- [x] Generic reference-PDF block detection for captions, tables, source notes, footnotes, and no-overlap gates.
 
 ## Immediate Next Tasks
 - [ ] Replace InDesign-scripted export with a pure server-side IDML writer if public hosting becomes a hard requirement.
 - [ ] Improve polygon fidelity and preserve more original graphic semantics.
-- [ ] Reconstruct semantic tables as native InDesign tables.
+- [ ] Improve inferred table cell spans and decorative table styling beyond native editable table reconstruction.
 
 ### EPIC-05 Release
 - [ ] GitHub Pages frontend deployment.

@@ -69,3 +69,8 @@
 - Status: accepted
 - Decision: When converting `Testfokus.pub` with its reference PDF present, the article is exported as page-anchored native textframes rather than one global threaded story.
 - Why: A single threaded story paginates several sections too early in InDesign, causing `Referenser` and `Personliga meddelanden` to land on the wrong pages despite native/structural checks passing.
+
+## DEC-015 Generic Reference Block Profile
+- Status: accepted
+- Decision: Same-basename reference PDFs are parsed into a generic layout profile for captions, tables, source notes, footnotes, and figure zones; conversion must not branch on `Testfokus` or any other fixture name.
+- Why: The page 11 regression showed that presence-only gates and fixture-specific placeholder tables can hide real document failures. Object identity, source text, native table count, and no-overlap gates are now required for release approval.
